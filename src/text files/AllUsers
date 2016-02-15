@@ -10,14 +10,10 @@ import java.io.Serializable;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Collections;
-
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
 import org.joda.time.Interval;
 import org.joda.time.format.DateTimeFormat;
-
-
-
 
 
 public class AllUsers implements Serializable {
@@ -382,11 +378,6 @@ public class AllUsers implements Serializable {
 			ex.printStackTrace();
 		}
 	}
-
-
-
-
-
 }
 
 

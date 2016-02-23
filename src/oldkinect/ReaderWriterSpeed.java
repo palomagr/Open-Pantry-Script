@@ -1,4 +1,4 @@
-package kinect;
+package oldkinect;
 
 
 import java.io.*;
@@ -8,7 +8,7 @@ public class ReaderWriterSpeed {
 
 		try {
 			FileReader fin = new FileReader("com ml 02 25.txt");
-			BufferedReader b = new BufferedReader(fin);
+			BufferedReader b = new BufferedReader(fin); 
 			FileWriter fout = new FileWriter("ml 02 25.txt"); //"k140 day_5_10.txt");
 			BufferedWriter bout= new BufferedWriter(fout);
 			//String preSec= "00";

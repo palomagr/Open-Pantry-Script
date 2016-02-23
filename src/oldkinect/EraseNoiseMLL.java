@@ -1,4 +1,4 @@
-package kinect;
+package oldkinect;
 
 import java.io.*;
 

@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoField;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -20,10 +21,12 @@ import javafx.geometry.Rectangle2D;
 public class MultiUser {
 
     final static String[] ID_DELIMS = {"!", "@", "#", "$", "%", "^"};
-    final static int TIME_ABSENT_NEW_PERSON = 7; //in seconds
+    final static int SECONDS_ABSENT_NEW_PERSON = 7; //in seconds
+    final static int MILLIS_BETWEEN_READS = 10;
     final static double KINECT_HEIGHT = 2.75; //in meters
     final static double KINECT_ANGLE_HORIZONTAL = Math.PI/4.0; //45 degrees
     final static double KINECT_ANGLE_VERTICAL = Math.PI/3.0; //60 degrees
+    final static double COM_FRAC_HEIGHT = .55;
     final static int SHELF_ID = 0;
     final static int MICROWAVE_ID = 1;
     final static int TABLE_ID = 2;
@@ -31,9 +34,9 @@ public class MultiUser {
     public static void main(String[] args) {
         try {
             String rawDataPath = ".\\src\\text files\\com 02-12 to 02-17.txt";
-            //File organizedFile = organizeRawData(rawDataPath);
-            //List<String>[] processedData = processOrganizedData(organizedFile);
-            List<String>[] processedData = processOrganizedData(new File(".\\src\\text files\\com 02-12 to 02-17 organized.txt"));
+            File organizedFile = organizeRawData(rawDataPath);
+            List<PointInTime>[] processedData = processOrganizedData(organizedFile);
+            //List<String>[] processedData = processOrganizedData(new File(".\\src\\text files\\com 02-12 to 02-17 organized.txt"));
             getStats(processedData, rawDataPath);
         } catch (IOException e) {
             // TODO Auto-generated catch block
@@ -68,11 +71,13 @@ public class MultiUser {
         return new Point3D(realX, realY, realZ);
     }
     
-    private static double getHeightFromCOM(double comY) {
-        return comY / 0.55;
+    private static double getHeightFromCOM(Point3D com) {
+        return com.getY() / COM_FRAC_HEIGHT;
     }
     
     private static File organizeRawData(final String rawDataPath) throws IOException {
+        System.out.println("Organizing Data...");
+        
         String modifier = "organized";
         FileReader reader = new FileReader(rawDataPath);
         BufferedReader buffReader = new BufferedReader(reader); 
@@ -80,16 +85,16 @@ public class MultiUser {
         
         String line = "";
         String[] prevLines = new String[ID_DELIMS.length]; Arrays.fill(prevLines,"");
-        String prevTimeStamp = "";
+        LocalDateTime prevTimeStamp = LocalDateTime.MIN;
         while(line != null) {
             line = buffReader.readLine();
             if(line != null) {
-                String timeStamp = line.substring(line.indexOf("_")-4);
+                LocalDateTime timeStamp = getLocalDateTime(line.substring(line.indexOf("_")-4));
                 String lineWOTime = line.substring(0,line.indexOf("_")-4).trim();
                 int userID = Character.getNumericValue(lineWOTime.charAt(lineWOTime.length()-1));
                 if(!lineWOTime.equals(prevLines[userID])) { //check for noise
                     if(!onlyZeros(lineWOTime)) { //check for useless data
-                        if(!timeStamp.equals(prevTimeStamp) && !prevTimeStamp.equals("")) {
+                        if(prevTimeStamp.until(timeStamp, ChronoUnit.MILLIS) > MILLIS_BETWEEN_READS) {
                             buffWriter.write(prevTimeStamp + "\n");
                         }
                         Scanner scan = new Scanner(line);
@@ -111,10 +116,12 @@ public class MultiUser {
                 + " " + modifier + ".txt");
     }
     
-    private static List<String>[] processOrganizedData(final File organizedData) throws IOException {
+    private static List<PointInTime>[] processOrganizedData(final File organizedData) throws IOException {
+        System.out.println("Processing Data...");
+        
         FileReader reader = new FileReader(organizedData);
         BufferedReader buffReader = new BufferedReader(reader);
-        List<String>[] processedData = new ArrayList[ID_DELIMS.length];
+        List<PointInTime>[] processedData = new ArrayList[ID_DELIMS.length];
         for (int i = 0; i < processedData.length; i++) {
             processedData[i] = new ArrayList<>();
         }
@@ -123,8 +130,11 @@ public class MultiUser {
         while(line != null) {
             for(int i = 0; i < ID_DELIMS.length; i++) {
                 if(line.contains(ID_DELIMS[i])) {
-                    processedData[i].add(line.substring(line.indexOf(ID_DELIMS[i])+1, line.lastIndexOf(ID_DELIMS[i])).trim() 
-                            + "\t" + line.substring(line.indexOf("_")-4));
+                    Scanner scan = new Scanner(line.substring(line.indexOf(ID_DELIMS[i])+1, line.lastIndexOf(ID_DELIMS[i])).trim());
+                    Point3D point = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()), Double.parseDouble(scan.next()));
+                    LocalDateTime dateTime = LocalDateTime.parse(line.substring(line.lastIndexOf("-")-7));
+                    processedData[i].add(new PointInTime(point, dateTime));
+                    scan.close();
                 }
             }
             line = buffReader.readLine();
@@ -136,54 +146,48 @@ public class MultiUser {
         return processedData; 
     }
     
-    private static void getStats(List<String>[] processedData, String rawDataPath) throws IOException {
+    private static void getStats(List<PointInTime>[] processedData, String rawDataPath) throws IOException {
+        System.out.println("Getting Individual-level Stats...");
         List<List<LocalDateTime>> dateTimes = getIndividualStats(processedData, rawDataPath);
         List<LocalDateTime> startDateTimes = dateTimes.get(0);
         List<LocalDateTime> endDateTimes = dateTimes.get(1);
+        System.out.println("Getting activity over time...");
         getActivityOverTime(startDateTimes, endDateTimes, rawDataPath);
-        System.out.println("done");
+        System.out.println("\nDone!");
     }
     
-    private static List<List<LocalDateTime>> getIndividualStats(List<String>[] processedData, String rawDataPath) throws IOException {
+    private static List<List<LocalDateTime>> getIndividualStats(List<PointInTime>[] processedData, String rawDataPath) throws IOException {
         List<LocalDateTime> startDateTimes = new ArrayList<>();
         List<LocalDateTime> endDateTimes = new ArrayList<>(); 
         List<Double> subjectHeights = new ArrayList<>();
         
-        for(List<String> singleUserData : processedData) {
+        for(List<PointInTime> singleUserData : processedData) {
             if(!singleUserData.isEmpty()) {
-                startDateTimes.add(getLocalDateTime(singleUserData.get(0).substring(singleUserData.get(0).indexOf("_")-4)));
-                /*Scanner scanInit = new Scanner(singleUserData.get(0));
-                scanInit.next(); 
-                subjectHeights.add(getHeightFromCOM(Double.parseDouble(scanInit.next())));
-                scanInit.close();*/
+                startDateTimes.add(singleUserData.get(0).getDateTime());
+                subjectHeights.add(getHeightFromCOM(singleUserData.get(0).getPoint()));
                 for(int i = 1; i < singleUserData.size(); i++) {
-                    LocalDateTime dateTime = getLocalDateTime(singleUserData.get(i).substring(singleUserData.get(i).indexOf("_")-4));
-                    LocalDateTime prevDateTime = getLocalDateTime(singleUserData.get(i-1).substring(singleUserData.get(i-1).indexOf("_")-4));
-                    if (prevDateTime.plusSeconds(TIME_ABSENT_NEW_PERSON).isBefore(dateTime)) {
+                    LocalDateTime dateTime = singleUserData.get(i).getDateTime();
+                    LocalDateTime prevDateTime = singleUserData.get(i-1).getDateTime();
+                    if (prevDateTime.plusSeconds(SECONDS_ABSENT_NEW_PERSON).isBefore(dateTime)) {
                         endDateTimes.add(prevDateTime);
                         startDateTimes.add(dateTime);
-                        
-                        /*Scanner scan = new Scanner(singleUserData.get(i));
-                        scan.next(); 
-                        subjectHeights.add(getHeightFromCOM(Double.parseDouble(scan.next())));
-                        scan.close();*/
+                        subjectHeights.add(getHeightFromCOM(singleUserData.get(i).getPoint()));
                     }
                 }
-                endDateTimes.add(getLocalDateTime(singleUserData.get(singleUserData.size()-1).substring(singleUserData.get(singleUserData.size()-1).indexOf("_")-4)));
+                endDateTimes.add(singleUserData.get(singleUserData.size()-1).getDateTime());
             }
         }
         
         BufferedWriter buffWriter = getBufferedWriter(rawDataPath, "individual");
         for(int i = 0; i < startDateTimes.size(); i++) { //filter blips 
-            LocalTime timeDiff = getTimeDiff(startDateTimes.get(i),endDateTimes.get(i));
-            if(timeDiff.isBefore(LocalTime.of(0, 0, TIME_ABSENT_NEW_PERSON))) {
+            if(startDateTimes.get(i).until(endDateTimes.get(i), ChronoUnit.SECONDS) < SECONDS_ABSENT_NEW_PERSON) {
                 startDateTimes.remove(i);
                 endDateTimes.remove(i);
                 i--;
             }
             else {
                 buffWriter.write("Person " + (i+1) + "\t" + startDateTimes.get(i) + "\t" + endDateTimes.get(i) + "\t" + "------\t" + "------\t" + "-------\t" 
-                                   + timeDiff + "\n");
+                                 + getTimeDiff(startDateTimes.get(i),endDateTimes.get(i)) + "\n");
                                  //+ subjectHeights.get(i) + "\t" + subjectHeights.get(i)*.55 + "\n");
             }
         }
@@ -218,8 +222,6 @@ public class MultiUser {
             buffWriter.write(dates.get(i).getStart().toLocalDate() + "\t" + numPeople.get(i).intValue() + "\n");
         }
         buffWriter.close();
-        
-        System.out.println(numPeople);
     }
     
     private static BufferedWriter getBufferedWriter(String path, String modifier) throws IOException {

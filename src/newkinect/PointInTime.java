@@ -20,4 +20,8 @@ public class PointInTime {
     public LocalDateTime getDateTime() {
         return dateTime.minusNanos(0);
     }
+    
+    public String toString() {
+        return point + " at " + dateTime;
+    }
 }

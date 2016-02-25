@@ -7,6 +7,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,7 +20,7 @@ import javafx.geometry.Rectangle2D;
 public class MultiUser {
 
     final static String[] ID_DELIMS = {"!", "@", "#", "$", "%", "^"};
-    final static int TIME_ABSENT_NEW_PERSON = 2; //in seconds
+    final static int TIME_ABSENT_NEW_PERSON = 7; //in seconds
     final static double KINECT_HEIGHT = 2.75; //in meters
     final static double KINECT_ANGLE_HORIZONTAL = Math.PI/4.0; //45 degrees
     final static double KINECT_ANGLE_VERTICAL = Math.PI/3.0; //60 degrees
@@ -29,10 +30,10 @@ public class MultiUser {
     
     public static void main(String[] args) {
         try {
-            String rawDataPath = ".\\src\\text files\\ml 02 25 u1.txt";
+            String rawDataPath = ".\\src\\text files\\com 02-12 to 02-17.txt";
             //File organizedFile = organizeRawData(rawDataPath);
             //List<String>[] processedData = processOrganizedData(organizedFile);
-            List<String>[] processedData = processOrganizedData(new File(".\\src\\text files\\ml 02 25 u1 organized.txt"));
+            List<String>[] processedData = processOrganizedData(new File(".\\src\\text files\\com 02-12 to 02-17 organized.txt"));
             getStats(processedData, rawDataPath);
         } catch (IOException e) {
             // TODO Auto-generated catch block
@@ -67,8 +68,8 @@ public class MultiUser {
         return new Point3D(realX, realY, realZ);
     }
     
-    private static double getHeightFromCOM(Point3D com) {
-        return com.getY() / 0.55;
+    private static double getHeightFromCOM(double comY) {
+        return comY / 0.55;
     }
     
     private static File organizeRawData(final String rawDataPath) throws IOException {
@@ -128,8 +129,11 @@ public class MultiUser {
             }
             line = buffReader.readLine();
         }
+        
+        //for(int i = 0; i < 1000; i++)
+        //    System.out.println(processedData[0].get(i));
         buffReader.close();
-        return processedData;
+        return processedData; 
     }
     
     private static void getStats(List<String>[] processedData, String rawDataPath) throws IOException {
@@ -137,21 +141,32 @@ public class MultiUser {
         List<LocalDateTime> startDateTimes = dateTimes.get(0);
         List<LocalDateTime> endDateTimes = dateTimes.get(1);
         getActivityOverTime(startDateTimes, endDateTimes, rawDataPath);
+        System.out.println("done");
     }
     
     private static List<List<LocalDateTime>> getIndividualStats(List<String>[] processedData, String rawDataPath) throws IOException {
-        List<LocalDateTime> startDateTimes = new ArrayList<LocalDateTime>();
-        List<LocalDateTime> endDateTimes = new ArrayList<LocalDateTime>(); 
+        List<LocalDateTime> startDateTimes = new ArrayList<>();
+        List<LocalDateTime> endDateTimes = new ArrayList<>(); 
+        List<Double> subjectHeights = new ArrayList<>();
         
         for(List<String> singleUserData : processedData) {
             if(!singleUserData.isEmpty()) {
                 startDateTimes.add(getLocalDateTime(singleUserData.get(0).substring(singleUserData.get(0).indexOf("_")-4)));
+                /*Scanner scanInit = new Scanner(singleUserData.get(0));
+                scanInit.next(); 
+                subjectHeights.add(getHeightFromCOM(Double.parseDouble(scanInit.next())));
+                scanInit.close();*/
                 for(int i = 1; i < singleUserData.size(); i++) {
                     LocalDateTime dateTime = getLocalDateTime(singleUserData.get(i).substring(singleUserData.get(i).indexOf("_")-4));
                     LocalDateTime prevDateTime = getLocalDateTime(singleUserData.get(i-1).substring(singleUserData.get(i-1).indexOf("_")-4));
                     if (prevDateTime.plusSeconds(TIME_ABSENT_NEW_PERSON).isBefore(dateTime)) {
                         endDateTimes.add(prevDateTime);
                         startDateTimes.add(dateTime);
+                        
+                        /*Scanner scan = new Scanner(singleUserData.get(i));
+                        scan.next(); 
+                        subjectHeights.add(getHeightFromCOM(Double.parseDouble(scan.next())));
+                        scan.close();*/
                     }
                 }
                 endDateTimes.add(getLocalDateTime(singleUserData.get(singleUserData.size()-1).substring(singleUserData.get(singleUserData.size()-1).indexOf("_")-4)));
@@ -159,8 +174,18 @@ public class MultiUser {
         }
         
         BufferedWriter buffWriter = getBufferedWriter(rawDataPath, "individual");
-        for(int i = 0; i < startDateTimes.size(); i++) {
-            buffWriter.write("Person " + (i+1) + "\t" + startDateTimes.get(i) + "\t" + endDateTimes.get(i) + "\n");
+        for(int i = 0; i < startDateTimes.size(); i++) { //filter blips 
+            LocalTime timeDiff = getTimeDiff(startDateTimes.get(i),endDateTimes.get(i));
+            if(timeDiff.isBefore(LocalTime.of(0, 0, TIME_ABSENT_NEW_PERSON))) {
+                startDateTimes.remove(i);
+                endDateTimes.remove(i);
+                i--;
+            }
+            else {
+                buffWriter.write("Person " + (i+1) + "\t" + startDateTimes.get(i) + "\t" + endDateTimes.get(i) + "\t" + "------\t" + "------\t" + "-------\t" 
+                                   + timeDiff + "\n");
+                                 //+ subjectHeights.get(i) + "\t" + subjectHeights.get(i)*.55 + "\n");
+            }
         }
         buffWriter.close();
         
@@ -206,14 +231,13 @@ public class MultiUser {
         return buffWriter;
     }
     
-    private static String getTimeDiff(LocalDateTime startTime, LocalDateTime endTime) {
+    private static LocalTime getTimeDiff(LocalDateTime startTime, LocalDateTime endTime) {
         LocalDateTime timeDiff = endTime.minusHours(startTime.getHour());
         timeDiff = timeDiff.minusMinutes(startTime.getMinute());
         timeDiff = timeDiff.minusSeconds(startTime.getSecond());
         timeDiff = timeDiff.minusNanos(startTime.getNano());
         
-        return timeDiff.getHour() + ":" + timeDiff.getMinute() + ":" + timeDiff.getSecond() 
-               + "." + (timeDiff.get(ChronoField.MILLI_OF_SECOND)); 
+        return timeDiff.toLocalTime();
     }
     
     private static void timeNearObject(int id) {
@@ -230,7 +254,7 @@ public class MultiUser {
         LocalDateTime dateTime = LocalDateTime.of(Integer.parseInt(scan.next()), Integer.parseInt(scan.next()), //year, month
                 Integer.parseInt(scan.next()), Integer.parseInt(scan.next()), //day, hour
                 Integer.parseInt(scan.next()), Integer.parseInt(scan.next()), //minute, second
-                Integer.parseInt(scan.next())*1000000); //nanosec = millisec*1000000
+                Integer.parseInt(scan.next())*1000000); //nanosec = millisec*1,000,000
         scan.close();
         return dateTime;
     }

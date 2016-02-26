@@ -8,7 +8,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -21,11 +20,13 @@ import javafx.geometry.Rectangle2D;
 public class MultiUser {
 
     final static String[] ID_DELIMS = {"!", "@", "#", "$", "%", "^"};
-    final static int SECONDS_ABSENT_NEW_PERSON = 7; //in seconds
+    final static int SECONDS_ABSENT_NEW_PERSON = 7;
+    final static double DISTANCE_NEW_PERSON = 1.0; //in meters
     final static int MILLIS_BETWEEN_READS = 10;
+    final static double MAX_PERSON_HEIGHT = 2.1336; //7ft
     final static double KINECT_HEIGHT = 2.75; //in meters
-    final static double KINECT_ANGLE_HORIZONTAL = Math.PI/4.0; //45 degrees
-    final static double KINECT_ANGLE_VERTICAL = Math.PI/3.0; //60 degrees
+    final static double KINECT_ANGLE_HORIZONTAL = Math.toRadians(45); 
+    final static double KINECT_ANGLE_VERTICAL = Math.toRadians(60); 
     final static double COM_FRAC_HEIGHT = .55;
     final static int SHELF_ID = 0;
     final static int MICROWAVE_ID = 1;
@@ -35,8 +36,8 @@ public class MultiUser {
         try {
             String rawDataPath = ".\\src\\text files\\com 02-12 to 02-17.txt";
             File organizedFile = organizeRawData(rawDataPath);
-            List<PointInTime>[] processedData = processOrganizedData(organizedFile);
-            //List<String>[] processedData = processOrganizedData(new File(".\\src\\text files\\com 02-12 to 02-17 organized.txt"));
+            List<PointInTime>[] processedData = processOrganizedData(organizedFile, rawDataPath);
+            //List<PointInTime>[] processedData = processOrganizedData(new File(".\\src\\text files\\com 02-12 to 02-17 organized.txt"), rawDataPath);
             getStats(processedData, rawDataPath);
         } catch (IOException e) {
             // TODO Auto-generated catch block
@@ -79,22 +80,23 @@ public class MultiUser {
         System.out.println("Organizing Data...");
         
         String modifier = "organized";
-        FileReader reader = new FileReader(rawDataPath);
+        FileReader reader = new FileReader(rawDataPath); 
         BufferedReader buffReader = new BufferedReader(reader); 
         BufferedWriter buffWriter = getBufferedWriter(rawDataPath, modifier); 
         
         String line = "";
         String[] prevLines = new String[ID_DELIMS.length]; Arrays.fill(prevLines,"");
         LocalDateTime prevTimeStamp = LocalDateTime.MIN;
-        while(line != null) {
+        while(line != null) { 
             line = buffReader.readLine();
-            if(line != null) {
-                LocalDateTime timeStamp = getLocalDateTime(line.substring(line.indexOf("_")-4));
-                String lineWOTime = line.substring(0,line.indexOf("_")-4).trim();
-                int userID = Character.getNumericValue(lineWOTime.charAt(lineWOTime.length()-1));
-                if(!lineWOTime.equals(prevLines[userID])) { //check for noise
-                    if(!onlyZeros(lineWOTime)) { //check for useless data
-                        if(prevTimeStamp.until(timeStamp, ChronoUnit.MILLIS) > MILLIS_BETWEEN_READS) {
+            //System.out.print(line);
+            if(line != null) { 
+                LocalDateTime timeStamp = getLocalDateTime(line.substring(line.lastIndexOf("\t")+1));
+                String lineWOTimeID = line.substring(0,line.lastIndexOf("\t")-1).trim(); 
+                int userID = Character.getNumericValue(line.charAt(line.lastIndexOf("\t")-1));
+                if(!lineWOTimeID.equals(prevLines[userID])) { //check for noise
+                    if(!onlyZeros(lineWOTimeID)) { //check for useless data
+                        if(!withinReads(prevTimeStamp, timeStamp)) {
                             buffWriter.write(prevTimeStamp + "\n");
                         }
                         Scanner scan = new Scanner(line);
@@ -105,7 +107,7 @@ public class MultiUser {
                         scan.close();
                     }
                 }
-                prevLines[userID] = lineWOTime;
+                prevLines[userID] = lineWOTimeID;
                 prevTimeStamp = timeStamp;
             }
         } buffWriter.write(prevTimeStamp + "\n");
@@ -116,11 +118,19 @@ public class MultiUser {
                 + " " + modifier + ".txt");
     }
     
-    private static List<PointInTime>[] processOrganizedData(final File organizedData) throws IOException {
+    private static boolean withinReads(LocalDateTime startDateTime, LocalDateTime endDateTime) {
+        return (startDateTime.until(endDateTime, ChronoUnit.DAYS) < 1) &&
+               (startDateTime.until(endDateTime, ChronoUnit.HOURS) < 1) &&
+               (startDateTime.until(endDateTime, ChronoUnit.MINUTES) < 1) &&
+               (startDateTime.until(endDateTime, ChronoUnit.MILLIS) < MILLIS_BETWEEN_READS);
+    }
+    
+    private static List<PointInTime>[] processOrganizedData(final File organizedData, final String rawDataPath) throws IOException {
         System.out.println("Processing Data...");
         
         FileReader reader = new FileReader(organizedData);
         BufferedReader buffReader = new BufferedReader(reader);
+        BufferedWriter buffWriter = getBufferedWriter(rawDataPath, "number_people_in_room");
         List<PointInTime>[] processedData = new ArrayList[ID_DELIMS.length];
         for (int i = 0; i < processedData.length; i++) {
             processedData[i] = new ArrayList<>();
@@ -128,30 +138,34 @@ public class MultiUser {
         
         String line = buffReader.readLine(); 
         while(line != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(line.substring(line.lastIndexOf("-")-7));
+            int numPeople = 0;
             for(int i = 0; i < ID_DELIMS.length; i++) {
                 if(line.contains(ID_DELIMS[i])) {
+                    numPeople++;
                     Scanner scan = new Scanner(line.substring(line.indexOf(ID_DELIMS[i])+1, line.lastIndexOf(ID_DELIMS[i])).trim());
                     Point3D point = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()), Double.parseDouble(scan.next()));
-                    LocalDateTime dateTime = LocalDateTime.parse(line.substring(line.lastIndexOf("-")-7));
                     processedData[i].add(new PointInTime(point, dateTime));
                     scan.close();
                 }
             }
+            buffWriter.write(numPeople + "\t" + dateTime + "\n");
             line = buffReader.readLine();
         }
         
         //for(int i = 0; i < 1000; i++)
         //    System.out.println(processedData[0].get(i));
         buffReader.close();
+        buffWriter.close();
         return processedData; 
     }
     
     private static void getStats(List<PointInTime>[] processedData, String rawDataPath) throws IOException {
-        System.out.println("Getting Individual-level Stats...");
+        System.out.println("Getting Individual Stats...");
         List<List<LocalDateTime>> dateTimes = getIndividualStats(processedData, rawDataPath);
         List<LocalDateTime> startDateTimes = dateTimes.get(0);
         List<LocalDateTime> endDateTimes = dateTimes.get(1);
-        System.out.println("Getting activity over time...");
+        System.out.println("Getting Activity Over Time...");
         getActivityOverTime(startDateTimes, endDateTimes, rawDataPath);
         System.out.println("\nDone!");
     }
@@ -159,36 +173,70 @@ public class MultiUser {
     private static List<List<LocalDateTime>> getIndividualStats(List<PointInTime>[] processedData, String rawDataPath) throws IOException {
         List<LocalDateTime> startDateTimes = new ArrayList<>();
         List<LocalDateTime> endDateTimes = new ArrayList<>(); 
-        List<Double> subjectHeights = new ArrayList<>();
+        List<List<Double>> subjectHeights = new ArrayList<>();
         
         for(List<PointInTime> singleUserData : processedData) {
             if(!singleUserData.isEmpty()) {
+                List<Double> heights = new ArrayList<>();
                 startDateTimes.add(singleUserData.get(0).getDateTime());
-                subjectHeights.add(getHeightFromCOM(singleUserData.get(0).getPoint()));
                 for(int i = 1; i < singleUserData.size(); i++) {
                     LocalDateTime dateTime = singleUserData.get(i).getDateTime();
                     LocalDateTime prevDateTime = singleUserData.get(i-1).getDateTime();
-                    if (prevDateTime.plusSeconds(SECONDS_ABSENT_NEW_PERSON).isBefore(dateTime)) {
-                        endDateTimes.add(prevDateTime);
-                        startDateTimes.add(dateTime);
-                        subjectHeights.add(getHeightFromCOM(singleUserData.get(i).getPoint()));
+                    Point3D location = singleUserData.get(i).getPoint();
+                    Point3D prevLocation = singleUserData.get(i-1).getPoint();
+                    
+                    double height = getHeightFromCOM(prevLocation);
+                    if(height > 0 && height < MAX_PERSON_HEIGHT) //filter heights
+                        heights.add(height);   
+                    
+                    if (prevDateTime.plusSeconds(SECONDS_ABSENT_NEW_PERSON).isBefore(dateTime)) { 
+                        if(prevDateTime.plusMinutes(2).isAfter(dateTime)) { //re-entry check
+                            Point3D vector = location.subtract(prevLocation);
+                            double distanceXZ = Math.sqrt(Math.pow(vector.getX(),2) + Math.pow(vector.getZ(),2)); 
+                            if(distanceXZ > DISTANCE_NEW_PERSON) {
+                                subjectHeights.add(heights);
+                                heights = new ArrayList<>();
+                                
+                                endDateTimes.add(prevDateTime);
+                                startDateTimes.add(dateTime);
+                            }
+                        }
+                        else {
+                            subjectHeights.add(heights);
+                            heights = new ArrayList<>();
+                            
+                            endDateTimes.add(prevDateTime);
+                            startDateTimes.add(dateTime);
+                        }
                     }
                 }
+                subjectHeights.add(heights);
                 endDateTimes.add(singleUserData.get(singleUserData.size()-1).getDateTime());
             }
         }
         
+        List<Double> avgHeights = new ArrayList<>();
+        for(int i = 0; i < subjectHeights.size(); i++) {
+            double sum = 0;
+            List<Double> heights = subjectHeights.get(i);
+            for(double height : heights) {
+                sum += height;
+            }
+            avgHeights.add(sum/heights.size());
+        }
+        
         BufferedWriter buffWriter = getBufferedWriter(rawDataPath, "individual");
-        for(int i = 0; i < startDateTimes.size(); i++) { //filter blips 
+        for(int i = 0; i < startDateTimes.size(); i++) { //filter heights and blips
             if(startDateTimes.get(i).until(endDateTimes.get(i), ChronoUnit.SECONDS) < SECONDS_ABSENT_NEW_PERSON) {
                 startDateTimes.remove(i);
                 endDateTimes.remove(i);
+                avgHeights.remove(i);
                 i--;
             }
             else {
                 buffWriter.write("Person " + (i+1) + "\t" + startDateTimes.get(i) + "\t" + endDateTimes.get(i) + "\t" + "------\t" + "------\t" + "-------\t" 
-                                 + getTimeDiff(startDateTimes.get(i),endDateTimes.get(i)) + "\n");
-                                 //+ subjectHeights.get(i) + "\t" + subjectHeights.get(i)*.55 + "\n");
+                                 + getTimeDiff(startDateTimes.get(i),endDateTimes.get(i)) + "\t"
+                                 + avgHeights.get(i) + "m\n");
             }
         }
         buffWriter.close();
@@ -211,7 +259,7 @@ public class MultiUser {
         for(int i = 0; i < dates.size(); i++) {
             for (int j = 0; j < startDateTimes.size(); j++) {
                 Timespan date = dates.get(i);
-                if(date.contains(startDateTimes.get(j)) || date.contains(endDateTimes.get(j))) {
+                if(date.contains(startDateTimes.get(j))) {
                     numPeople.set(i, numPeople.get(i)+1);
                 }
             }

@@ -26,15 +26,15 @@ public class MultiUser {
     final static double MAX_PERSON_HEIGHT = 2.1336; //7ft
     final static double KINECT_HEIGHT = 2.75; //in meters
     final static double KINECT_ANGLE_HORIZONTAL = Math.toRadians(45); 
-    final static double KINECT_ANGLE_VERTICAL = Math.toRadians(60); 
-    final static double COM_FRAC_HEIGHT = .55;
+    final static double KINECT_ANGLE_VERTICAL = Math.toRadians(80); 
+    final static double COM_FRAC_HEIGHT = 1;
     final static int SHELF_ID = 0;
     final static int MICROWAVE_ID = 1;
     final static int TABLE_ID = 2;
     
     public static void main(String[] args) {
         try {
-            String rawDataPath = ".\\src\\text files\\com 02-12 to 02-17.txt";
+            String rawDataPath = ".\\src\\text files\\OP head wo 0.txt";
             File organizedFile = organizeRawData(rawDataPath);
             List<PointInTime>[] processedData = processOrganizedData(organizedFile, rawDataPath);
             //List<PointInTime>[] processedData = processOrganizedData(new File(".\\src\\text files\\com 02-12 to 02-17 organized.txt"), rawDataPath);
@@ -149,7 +149,7 @@ public class MultiUser {
                     scan.close();
                 }
             }
-            buffWriter.write(numPeople + "\t" + dateTime + "\n");
+            buffWriter.write(numPeople + "\t" + dateTime.toString().replace("T", "_").replace(":", "_").replace("-", "_") + "\n");
             line = buffReader.readLine();
         }
         
@@ -186,7 +186,7 @@ public class MultiUser {
                     Point3D prevLocation = singleUserData.get(i-1).getPoint();
                     
                     double height = getHeightFromCOM(prevLocation);
-                    if(height > 0 && height < MAX_PERSON_HEIGHT) //filter heights
+                    if(height > 0 && height < MAX_PERSON_HEIGHT) //filter heights/noise
                         heights.add(height);   
                     
                     if (prevDateTime.plusSeconds(SECONDS_ABSENT_NEW_PERSON).isBefore(dateTime)) { 
@@ -194,19 +194,23 @@ public class MultiUser {
                             Point3D vector = location.subtract(prevLocation);
                             double distanceXZ = Math.sqrt(Math.pow(vector.getX(),2) + Math.pow(vector.getZ(),2)); 
                             if(distanceXZ > DISTANCE_NEW_PERSON) {
+                                if(!heights.isEmpty()) {
+                                    subjectHeights.add(heights);
+                                    heights = new ArrayList<>();
+                                    
+                                    endDateTimes.add(prevDateTime);
+                                    startDateTimes.add(dateTime);
+                                }
+                            }
+                        }
+                        else {
+                            if(!heights.isEmpty()) {
                                 subjectHeights.add(heights);
                                 heights = new ArrayList<>();
                                 
                                 endDateTimes.add(prevDateTime);
                                 startDateTimes.add(dateTime);
                             }
-                        }
-                        else {
-                            subjectHeights.add(heights);
-                            heights = new ArrayList<>();
-                            
-                            endDateTimes.add(prevDateTime);
-                            startDateTimes.add(dateTime);
                         }
                     }
                 }
@@ -234,9 +238,9 @@ public class MultiUser {
                 i--;
             }
             else {
-                buffWriter.write("Person " + (i+1) + "\t" + startDateTimes.get(i) + "\t" + endDateTimes.get(i) + "\t" + "------\t" + "------\t" + "-------\t" 
-                                 + getTimeDiff(startDateTimes.get(i),endDateTimes.get(i)) + "\t"
-                                 + avgHeights.get(i) + "m\n");
+                buffWriter.write("Person " + (i+1) + "\t" + startDateTimes.get(i).toString().replace("T", "_").replace(":", "_").replace("-", "_") + "\t" + endDateTimes.get(i).toString().replace("T", "_").replace(":", "_").replace("-", "_") + "\t" + "------\t" + "------\t" + "-------\t" 
+                                 + startDateTimes.get(i).until(endDateTimes.get(i), ChronoUnit.SECONDS) + "\tsec\t"
+                                 + avgHeights.get(i) + "\n");
             }
         }
         buffWriter.close();
@@ -279,15 +283,6 @@ public class MultiUser {
         FileWriter writer = new FileWriter(individualFile);
         BufferedWriter buffWriter = new BufferedWriter(writer);
         return buffWriter;
-    }
-    
-    private static LocalTime getTimeDiff(LocalDateTime startTime, LocalDateTime endTime) {
-        LocalDateTime timeDiff = endTime.minusHours(startTime.getHour());
-        timeDiff = timeDiff.minusMinutes(startTime.getMinute());
-        timeDiff = timeDiff.minusSeconds(startTime.getSecond());
-        timeDiff = timeDiff.minusNanos(startTime.getNano());
-        
-        return timeDiff.toLocalTime();
     }
     
     private static void timeNearObject(int id) {

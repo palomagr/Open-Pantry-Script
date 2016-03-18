@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Scanner;
+
 import javafx.geometry.Point3D;
 import javafx.geometry.Rectangle2D;
 
@@ -21,14 +22,15 @@ public class MultiUser {
     private final static String[] ID_DELIMS = {"!", "@", "#", "$", "%", "^"};
     //filter values
     private final static int MILLIS_BETWEEN_READS = 10;
-    private final static int SECONDS_ABSENT_NEW_PERSON = 7;
+    private final static int SECONDS_ABSENT_NEW_PERSON = 5;
     private final static int REENTRY_LIMIT_SECONDS = 2*60; 
     private final static double DISTANCE_NEW_PERSON = 1.0; //in meters
     private final static double MAX_PERSON_HEIGHT = 2.0; //in meters
     private final static double ACCEPTABLE_HEIGHT_FLUX = 0.2; //in meters
     private final static double STATIC_OBJECT_MAX_DISTANCE = 0.05;
-    private final static int STATIC_OBJECT_MIN_SECONDS = 60;
+    private final static int STATIC_OBJECT_MIN_SECONDS = 2*60;
     private final static double KINECT_BLIND_SPOT_DISTANCE = 0.4;
+    private final static double VAILD_SPACE_WALL_OFFSET = 0.04;
     //kinect coordinate adjustments
     private final static double KINECT_HEIGHT = 2.75; //in meters
     private final static double KINECT_ANGLE_HORIZONTAL = Math.toRadians(45); 
@@ -40,9 +42,9 @@ public class MultiUser {
     private final static int TABLE_ID = 2;
     //room layout
     private final static Cube ROOM = new Cube(Point3D.ZERO, new Point3D(3.14, 2.75, 3.33)); // point coords in meters
-    private final static Point3D aboveDoorOrigin = new Point3D(3.1, MAX_PERSON_HEIGHT, 2.22);
-    private final static Cube ABOVE_DOOR = new Cube(aboveDoorOrigin, ROOM.max()); 
-    private final static Cube[] INVALID_SPACES = { ABOVE_DOOR };
+    private final static Cube VALID_SPACE = new Cube(ROOM.origin().add(VAILD_SPACE_WALL_OFFSET, VAILD_SPACE_WALL_OFFSET, VAILD_SPACE_WALL_OFFSET),
+            ROOM.max().subtract(VAILD_SPACE_WALL_OFFSET, VAILD_SPACE_WALL_OFFSET, VAILD_SPACE_WALL_OFFSET));
+    private static List<Cube> invalidSpaces = new ArrayList<>();
     
     public static void main(String[] args) {
         try {
@@ -57,33 +59,9 @@ public class MultiUser {
         }
     }
     
-    //with respect to the corner where the kinect is located
-    //the x-axis extends along the wall right of the kinect 
-    //the z-axis extends along the wall left of the kinect
-    //the y-axis runs up from the ground to the ceiling
-    private static Point3D getRealCoord(final double x, final double y, final double z) {
-        //calculating x and z using basic trig
-        double angleFromWallHorz = KINECT_ANGLE_HORIZONTAL - Math.atan2(x,z);
-        double distanceFromKinectXZ = Math.sqrt(Math.pow(z, 2) + Math.pow(x, 2));
-        double realX = distanceFromKinectXZ*Math.sin(angleFromWallHorz); 
-        double realZ = distanceFromKinectXZ*Math.cos(angleFromWallHorz);
-        
-        //calculating y using law of cosines
-        double angleFromWallVert = Math.atan2(y,z) + KINECT_ANGLE_VERTICAL;
-        double distanceFromKinectYZ = Math.sqrt(Math.pow(z,2) + Math.pow(y,2));
-        double r = Math.sqrt(Math.pow(distanceFromKinectYZ,2) + Math.pow(KINECT_HEIGHT,2) 
-                - 2*distanceFromKinectYZ*KINECT_HEIGHT*Math.cos(angleFromWallVert));
-        double angleOppositeDFK = Math.acos((Math.pow(KINECT_HEIGHT,2)+Math.pow(r,2)-Math.pow(distanceFromKinectYZ,2))/(2*KINECT_HEIGHT*r));
-        double theta = Math.PI/2.0-angleOppositeDFK;
-        double realY = r*Math.sin(theta);
-        
-        return new Point3D(realX, realY, realZ);
-    }
-    
-    private static double getHeightFromCOM(Point3D com) {
-        return com.getY() / COM_FRAC_HEIGHT;
-    }
-    
+    /**
+     * main methods
+     */
     private static File organizeRawData(final String rawDataPath) throws IOException {
         System.out.println("Organizing Data...");
         
@@ -129,14 +107,6 @@ public class MultiUser {
                 + " " + modifier + ".txt");
     }
     
-    //checks if two times are similar enough to be considered the same 
-    private static boolean withinReads(LocalDateTime startDateTime, LocalDateTime endDateTime) {
-        return (startDateTime.until(endDateTime, ChronoUnit.DAYS) < 1) &&
-               (startDateTime.until(endDateTime, ChronoUnit.HOURS) < 1) &&
-               (startDateTime.until(endDateTime, ChronoUnit.MINUTES) < 1) &&
-               (startDateTime.until(endDateTime, ChronoUnit.MILLIS) < MILLIS_BETWEEN_READS);
-    }
-    
     private static List<PointInTime>[] processOrganizedData(final File organizedData, final String rawDataPath) throws IOException {
         System.out.println("Processing Data...");
         
@@ -175,23 +145,22 @@ public class MultiUser {
     
     private static void getStats(List<PointInTime>[] processedData, String rawDataPath) throws IOException {
         System.out.println("Getting Individual Stats...");
-        List<List<LocalDateTime>> dateTimes = getIndividualStats(processedData, rawDataPath);
-        List<LocalDateTime> startDateTimes = dateTimes.get(0);
-        List<LocalDateTime> endDateTimes = dateTimes.get(1);
+        List<Person> people = getIndividualStats(processedData, rawDataPath);
+        //List<LocalDateTime> startDateTimes = dateTimes.get(0);
+        //List<LocalDateTime> endDateTimes = dateTimes.get(1);
         System.out.println("Getting Activity Over Time...");
-        getActivityOverTime(startDateTimes, endDateTimes, rawDataPath);
+        getActivityOverTime(people, rawDataPath);
         System.out.println("\nDone!");
     }
     
-    private static List<List<LocalDateTime>> getIndividualStats(List<PointInTime>[] processedData, String rawDataPath) throws IOException {
-        List<PointInTime> startPointsInTime = new ArrayList<>();
-        List<PointInTime> endPointsInTime = new ArrayList<>(); 
+    private static List<Person> getIndividualStats(List<PointInTime>[] processedData, String rawDataPath) throws IOException {
+        List<Person> people = new ArrayList<>(); 
         List<List<Double>> subjectHeights = new ArrayList<>();
         
         for(List<PointInTime> singleUserData : processedData) {
             if(!singleUserData.isEmpty()) {
                 List<Double> heights = new ArrayList<>();
-                startPointsInTime.add(singleUserData.get(0));
+                people.add(new Person(singleUserData.get(0)));
                 for(int i = 1; i < singleUserData.size(); i++) {
                     PointInTime currPointInTime = singleUserData.get(i);
                     PointInTime prevPointInTime = singleUserData.get(i-1);
@@ -205,145 +174,116 @@ public class MultiUser {
                     //looking like possible new person
                     if (reentryTime > SECONDS_ABSENT_NEW_PERSON) {  
                         Point3D vector = currPointInTime.getPoint().subtract(prevPointInTime.getPoint());
-                        double distanceXZ = Math.sqrt(Math.pow(vector.getX(),2) + Math.pow(vector.getZ(),2)); 
+                        double distanceXZ = Math.sqrt(Math.pow(vector.getX(),2) + Math.pow(vector.getZ(),2));
+                        
                         //re-entry check
-                        if(reentryTime > REENTRY_LIMIT_SECONDS || (reentryTime <= REENTRY_LIMIT_SECONDS && distanceXZ > DISTANCE_NEW_PERSON)) { 
+                        if(reentryTime > REENTRY_LIMIT_SECONDS || (reentryTime <= REENTRY_LIMIT_SECONDS && (distanceXZ > DISTANCE_NEW_PERSON || !withinHeightFlux(heights)))) { 
+                            System.err.println(prevPointInTime.getDateTime() + " " + currPointInTime.getDateTime() + " " + reentryTime + " " + distanceXZ + " " + withinHeightFlux(heights));
+                            if(!withinHeightFlux(heights)) {
+                                heights.remove(heights.size()-1);
+                            }
                             subjectHeights.add(heights);
                             heights = new ArrayList<>();
-                            endPointsInTime.add(prevPointInTime);
-                            startPointsInTime.add(currPointInTime);
+                            people.get(people.size()-1).setEndPointInTime(prevPointInTime);
+                            people.add(new Person(currPointInTime));
                         }
                     }
                 }
                 subjectHeights.add(heights);
-                endPointsInTime.add(singleUserData.get(singleUserData.size()-1));
+                people.get(people.size()-1).setEndPointInTime(singleUserData.get(singleUserData.size()-1));
             }
         }
         
         //average subject heights
-        List<Double> avgHeights = new ArrayList<>();
         for(int i = 0; i < subjectHeights.size(); i++) {
             List<Double> heights = subjectHeights.get(i);
             if(heights.isEmpty()) {
-                startPointsInTime.remove(i);
-                endPointsInTime.remove(i);
+                subjectHeights.remove(i);
+                people.remove(i);
+                i--;
             }
             else {
                 double sum = 0;
                 for(double height : heights) {
                     sum += height;
                 }
-                avgHeights.add(sum/heights.size());
+                people.get(i).setHeight(sum/heights.size());
             }
         }
         
         //filter blips
-        for(int i = 0; i < startPointsInTime.size(); i++) { 
+        for(int i = 0; i < people.size(); i++) { 
             //filter blips
-            if(startPointsInTime.get(i).getDateTime().until(endPointsInTime.get(i).getDateTime(), ChronoUnit.SECONDS) < SECONDS_ABSENT_NEW_PERSON) {
-                startPointsInTime.remove(i);
-                endPointsInTime.remove(i);
-                avgHeights.remove(i);
+            if(people.get(i).getStartDateTime().until(people.get(i).getEndDateTime(), ChronoUnit.SECONDS) < SECONDS_ABSENT_NEW_PERSON) {
+                people.remove(i);
                 i--;
             }
         }
         
-        //combine users 
-        for(int i = 1; i < startPointsInTime.size(); i++) { 
-            PointInTime endPointInTime = endPointsInTime.get(i-1);
-            PointInTime startPointInTime = startPointsInTime.get(i);
-            long reentryTime = endPointInTime.getDateTime().until(startPointInTime.getDateTime(), ChronoUnit.SECONDS);
-            Point3D vector = startPointInTime.getPoint().subtract(endPointInTime.getPoint());
-            double distanceXZ = Math.sqrt(Math.pow(vector.getX(),2) + Math.pow(vector.getZ(),2)); 
-            
-            if(reentryTime <= REENTRY_LIMIT_SECONDS && 
-                    distanceXZ <= DISTANCE_NEW_PERSON && 
-                    withinHeightFlux(Arrays.asList(avgHeights.get(i-1), avgHeights.get(i)))) {
-                endPointsInTime.remove(i-1);
-                startPointsInTime.remove(i);
-                avgHeights.set(i-1, (avgHeights.get(i-1) + avgHeights.get(i)) / 2.0);
+        //check for staticObjects 
+        for(int i = 0; i < people.size(); i++) {
+            if(staticObject(processedData, people.get(i))) {
+                people.remove(i);
                 i--;
             }
         }
+
+        //sort people by the time they entered
+        Collections.sort(people);
+        //combine users 
+        /*for(int i = 1; i < people.size(); i++) { 
+            PointInTime prevEndPointInTime = people.get(i-1).getEndPointInTime();
+            PointInTime currStartPointInTime = people.get(i).getStartPointInTime();
+            long reentryTime = prevEndPointInTime.getDateTime().until(currStartPointInTime.getDateTime(), ChronoUnit.SECONDS);
+            Point3D vector = currStartPointInTime.getPoint().subtract(prevEndPointInTime.getPoint());
+            double distanceXZ = Math.sqrt(Math.pow(vector.getX(),2) + Math.pow(vector.getZ(),2)); 
+            
+            //PROBLEM
+            //System.err.println(people.get(i-1).getStartDateTime() + " " + reentryTime + " " + distanceXZ + " " + Math.abs(people.get(i-1).getHeight() - people.get(i).getHeight()));
+            if((reentryTime >= 0 && reentryTime <= REENTRY_LIMIT_SECONDS) && 
+                    distanceXZ <= DISTANCE_NEW_PERSON && 
+                    withinHeightFlux(Arrays.asList(people.get(i-1).getHeight(), people.get(i).getHeight()))) {
+                people.get(i-1).setEndPointInTime(people.get(i).getEndPointInTime());
+                people.get(i-1).setHeight((people.get(i-1).getHeight() + people.get(i).getHeight()) / 2);
+                people.remove(i);
+                i--;
+            }
+        }*/
         
         //write to file
         BufferedWriter buffWriter = getBufferedWriter(rawDataPath, "individual");
-        for(int i = 0; i < startPointsInTime.size(); i++) { //filter blips
-            buffWriter.write("Person " + (i+1) + "\t" + startPointsInTime.get(i).getDateTime().toString().replace("T", "_").replace(":", "_").replace("-", "_") 
-                             + "\t" + endPointsInTime.get(i).getDateTime().toString().replace("T", "_").replace(":", "_").replace("-", "_") + "\t" + "------\t" 
-                             + "------\t"  + "-------\t" + startPointsInTime.get(i).getDateTime().until(endPointsInTime.get(i).getDateTime(), ChronoUnit.SECONDS) 
-                             + "\tsec\t" + avgHeights.get(i) + "\n");
+        for(int i = 0; i < people.size(); i++) {
+            buffWriter.write("Person " + (i+1) + "\t" + people.get(i).getStartDateTime().toString().replace("T", "_").replace(":", "_").replace("-", "_") 
+                             + "\t" + people.get(i).getEndDateTime().toString().replace("T", "_").replace(":", "_").replace("-", "_") + "\t" + "------\t" 
+                             + "------\t"  + "-------\t" + people.get(i).getStartDateTime().until(people.get(i).getEndDateTime(), ChronoUnit.SECONDS) 
+                             + "\tsec\t" + people.get(i).getHeight() + "\n");
         }
         buffWriter.close();
-
-        //return LocalDateTimes for fourther processing
-        List<List<LocalDateTime>> dateTimes = Arrays.asList(getDateTimes(startPointsInTime), getDateTimes(endPointsInTime));
-        return dateTimes;
+        return Collections.unmodifiableList(people);
     }
-    
-    private static List<LocalDateTime> getDateTimes(List<PointInTime> pointsInTime) {
-        List<LocalDateTime> dateTimes = new ArrayList<>();
-        for(PointInTime pointInTime : pointsInTime) {
-            dateTimes.add(pointInTime.getDateTime());
-        }
-        return dateTimes;
-    }
-    
-    private static boolean staticObject(List<PointInTime>[] processedData, PointInTime startPointInTime, PointInTime endPointInTime) {
-        for(List<PointInTime> singleUserData : processedData) {
-            if(singleUserData.contains(startPointInTime) && singleUserData.contains(endPointInTime)) {
-                int startIndex = -1;
-                int endIndex = -1;
-                for(int i = 0; i < singleUserData.size(); i++) {
-                    if(startPointInTime.equals(singleUserData.get(i).getDateTime())) {
-                        startIndex = i;
-                    }
-                    else if(endPointInTime.equals(singleUserData.get(i).getDateTime())) {
-                        endIndex = i;
-                    }
-                }
-                PointInTime startPoint = singleUserData.get(startIndex);
-                for(int i = startIndex+1; i <= endIndex; i++) {
-                    if(startPoint.getPoint().distance(singleUserData.get(i).getPoint()) < STATIC_OBJECT_MAX_DISTANCE) {
-                        if(startPoint.getDateTime().until(singleUserData.get(i).getDateTime(), ChronoUnit.SECONDS) > STATIC_OBJECT_MIN_SECONDS) {
-                           return true;
-                        }
-                    }
-                }
-                break;
-            }
-        }
-        return false;
-    }
-    
-    private static boolean withinHeightFlux(List<Double> heights) {
-        if(heights.size() > 1) {
-            for(int i = 1; i < heights.size(); i++) {
-                double height1 = heights.get(i);
-                double height2 = heights.get(i-1);
-                if (Math.abs(height1 - height2) > ACCEPTABLE_HEIGHT_FLUX) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-    
-    private static void getActivityOverTime(List<LocalDateTime> startDateTimes, List<LocalDateTime> endDateTimes, String rawDataPath) throws IOException {
-        LocalDateTime maxEndDate = endDateTimes.get(0);
-        for(LocalDateTime endDate : endDateTimes) {
-            if(endDate.isAfter(maxEndDate)) {
-                maxEndDate = endDate;
+     
+    private static void getActivityOverTime(List<Person> people, String rawDataPath) throws IOException {
+        LocalDateTime minStartDate = people.get(0).getStartDateTime();
+        for(Person person : people) {
+            if(person.getStartDateTime().isBefore(minStartDate)) {
+                minStartDate = person.getStartDateTime();
             }
         }
         
-        Timespan totalTimeCollection = new Timespan(startDateTimes.get(0), maxEndDate);
+        LocalDateTime maxEndDate = people.get(0).getEndDateTime();
+        for(Person person : people) {
+            if(person.getEndDateTime().isAfter(maxEndDate)) {
+                maxEndDate = person.getEndDateTime();
+            }
+        }
+        
+        Timespan totalTimeCollection = new Timespan(minStartDate, maxEndDate);
         List<Timespan> dates = totalTimeCollection.split();
         List<Integer> numPeople = new ArrayList<Integer>(Collections.nCopies(dates.size(), 0));
         for(int i = 0; i < dates.size(); i++) {
-            for (int j = 0; j < startDateTimes.size(); j++) {
+            for (int j = 0; j < people.size(); j++) {
                 Timespan date = dates.get(i);
-                if(date.contains(startDateTimes.get(j))) {
+                if(date.contains(people.get(j).getStartDateTime())) {
                     numPeople.set(i, numPeople.get(i)+1);
                 }
             }
@@ -356,6 +296,9 @@ public class MultiUser {
         buffWriter.close();
     }
     
+    /**
+     * helper methods
+     */
     private static BufferedWriter getBufferedWriter(String path, String modifier) throws IOException {
         File individualFile = new File(path.substring(0, path.lastIndexOf("."))
                 + " " + modifier + ".txt");
@@ -365,8 +308,24 @@ public class MultiUser {
         return buffWriter;
     }
     
+    private static boolean withinHeightFlux(List<Double> heights) {
+        if(heights.size() > 1) {
+            //for(int i = 1; i < heights.size(); i++) {
+                double height1 = heights.get(heights.size()-1);
+                double height2 = heights.get(heights.size()-2);
+                if (Math.abs(height1 - height2) > ACCEPTABLE_HEIGHT_FLUX) {
+                    return false;
+                }
+            //}
+        }
+        return true;
+    }
+    
     private static boolean inInvalidSpace(Point3D point) {
-        for(Cube space : INVALID_SPACES) {
+        if(!VALID_SPACE.contains(point)) {
+            return true;
+        }
+        for(Cube space : invalidSpaces) {
             if(space.contains(point)) {
                 return true;
             }
@@ -374,6 +333,36 @@ public class MultiUser {
         Point3D kinectLocation = new Point3D(0,0, KINECT_HEIGHT);
         if(kinectLocation.distance(point) <= KINECT_BLIND_SPOT_DISTANCE) {
             return true;
+        }
+        return false;
+    }
+    
+    private static boolean staticObject(List<PointInTime>[] processedData, Person person) {
+        PointInTime startPointInTime = person.getStartPointInTime();
+        PointInTime endPointInTime = person.getEndPointInTime();
+        for(List<PointInTime> singleUserData : processedData) {
+            if(singleUserData.contains(startPointInTime) && singleUserData.contains(endPointInTime)) {
+                int startIndex = -1;
+                int endIndex = -1;
+                for(int i = 0; i < singleUserData.size(); i++) {
+                    if(startPointInTime.equals(singleUserData.get(i))) {
+                        startIndex = i;
+                    }
+                    else if(endPointInTime.equals(singleUserData.get(i))) {
+                        endIndex = i;
+                    }
+                }
+                PointInTime startPoint = singleUserData.get(startIndex);
+                for(int i = startIndex+1; i <= endIndex; i++) {
+                    if(startPoint.getPoint().distance(singleUserData.get(i).getPoint()) < STATIC_OBJECT_MAX_DISTANCE) {
+                        if(startPoint.getDateTime().until(singleUserData.get(i).getDateTime(), ChronoUnit.SECONDS) > STATIC_OBJECT_MIN_SECONDS) {
+                            //System.err.println(startPointInTime.getDateTime() + " " + endPointInTime.getDateTime());
+                            return true;
+                        }
+                    }
+                }
+                break;
+            }
         }
         return false;
     }
@@ -395,6 +384,43 @@ public class MultiUser {
                 Integer.parseInt(scan.next())*1000000); //nanosec = millisec*1,000,000
         scan.close();
         return dateTime;
+    }
+    
+    
+    private static double getHeightFromCOM(Point3D com) {
+        return com.getY() / COM_FRAC_HEIGHT;
+    }
+    
+    //with respect to the corner where the kinect is located
+    //the x-axis extends along the wall right of the kinect 
+    //the z-axis extends along the wall left of the kinect
+    //the y-axis runs up from the ground to the ceiling
+    private static Point3D getRealCoord(final double x, final double y, final double z) {
+        //calculating x and z using basic trig
+        double angleFromWallHorz = KINECT_ANGLE_HORIZONTAL - Math.atan2(x,z);
+        double distanceFromKinectXZ = Math.sqrt(Math.pow(z, 2) + Math.pow(x, 2));
+        double realX = distanceFromKinectXZ*Math.sin(angleFromWallHorz); 
+        double realZ = distanceFromKinectXZ*Math.cos(angleFromWallHorz);
+        
+        //calculating y using law of cosines
+        double angleFromWallVert = Math.atan2(y,z) + KINECT_ANGLE_VERTICAL;
+        double distanceFromKinectYZ = Math.sqrt(Math.pow(z,2) + Math.pow(y,2));
+        double r = Math.sqrt(Math.pow(distanceFromKinectYZ,2) + Math.pow(KINECT_HEIGHT,2) 
+                - 2*distanceFromKinectYZ*KINECT_HEIGHT*Math.cos(angleFromWallVert));
+        double angleOppositeDFK = Math.acos((Math.pow(KINECT_HEIGHT,2)+Math.pow(r,2)-Math.pow(distanceFromKinectYZ,2))/(2*KINECT_HEIGHT*r));
+        double theta = Math.PI/2.0-angleOppositeDFK;
+        double realY = r*Math.sin(theta);
+        
+        return new Point3D(realX, realY, realZ);
+    }
+    
+    //checks if two times are similar enough to be considered the same 
+    private static boolean withinReads(LocalDateTime startDateTime, LocalDateTime endDateTime) {
+        return (startDateTime.until(endDateTime, ChronoUnit.DAYS) < 1) &&
+               (startDateTime.until(endDateTime, ChronoUnit.HOURS) < 1) &&
+               (startDateTime.until(endDateTime, ChronoUnit.MINUTES) < 1) &&
+               (startDateTime.until(endDateTime, ChronoUnit.SECONDS) < 1) &&
+               (startDateTime.until(endDateTime, ChronoUnit.MILLIS) < MILLIS_BETWEEN_READS);
     }
     
     //returns true on empty string

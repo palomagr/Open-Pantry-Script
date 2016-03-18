@@ -17,7 +17,7 @@ public class PointInTime {
     }
     
     public LocalDateTime getDateTime() {
-        return dateTime.minusNanos(0);
+        return dateTime;
     }
     
     @Override

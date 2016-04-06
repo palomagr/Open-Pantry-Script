@@ -143,7 +143,7 @@ public class MultiUser {
             for(int i = 0; i < ID_DELIMS.length; i++) {
                 if(line.contains(ID_DELIMS[i])) {
                     numPeople++;
-                    Scanner scan = new Scanner(line.substring(line.indexOf(ID_DELIMS[i])+1, line.lastIndexOf(ID_DELIMS[i])).trim());
+                    Scanner scan = new Scanner(line.substring(line.indexOf(ID_DELIMS[i])+2, line.lastIndexOf(ID_DELIMS[i])).trim());
                     Point3D point = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()), Double.parseDouble(scan.next()));
                     processedData[i].add(new PointInTime(point, dateTime));
                     scan.close();
@@ -186,7 +186,7 @@ public class MultiUser {
                     Point3D prevLocation = singleUserData.get(i-1).getPoint();
                     
                     double height = getHeightFromCOM(prevLocation);
-                    if(height > 0 && height < MAX_PERSON_HEIGHT) //filter heights/noise
+                    if (height > 0 && height < MAX_PERSON_HEIGHT) //filter heights/noise
                         heights.add(height);   
                     
                     if (prevDateTime.plusSeconds(SECONDS_ABSENT_NEW_PERSON).isBefore(dateTime)) { 

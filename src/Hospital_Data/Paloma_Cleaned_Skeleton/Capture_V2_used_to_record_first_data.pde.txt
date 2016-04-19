@@ -1,0 +1,403 @@
+
+
+import KinectPV2.KJoint;
+import KinectPV2.*;
+import org.joda.time.DateTime;
+import org.joda.time.Duration;
+import org.joda.time.Interval;
+import org.joda.time.format.DateTimeFormat;
+
+PrintWriter output;
+PrintWriter output2;
+PrintWriter output3;
+KinectPV2 kinect;
+
+KSkeleton [] skeleton;
+KQuaternion q;
+
+float zVal = 300;
+float rotX = PI;
+
+void setup() {
+  size(1024, 768, P3D);
+
+  kinect = new KinectPV2(this);
+
+  kinect.enableColorImg(true);
+
+  //enable 3d  with (x,y,z) position
+  kinect.enableSkeleton3DMap(true);
+
+  kinect.init();
+  output = createWriter("com data Test3.txt");
+  output2 = createWriter("skeleton data Test3.txt");
+  output3 = createWriter("head data Test3.txt");
+}
+
+void draw() {
+  background(0);
+
+  //image(kinect.getColorImage(), 0, 0, 320, 240);
+
+  ArrayList<KSkeleton> skeletonArray =  kinect.getSkeleton3d();
+
+
+  //translate the scene to the center 
+  pushMatrix();
+  translate(width/2, height/2, 0);
+  scale(zVal);
+  rotateX(rotX);
+
+  for (int i = 0; i < skeletonArray.size(); i++) {
+    if (skeleton[i].isTracked()) {
+      KJoint[] joints = skeleton[i].getJoints();
+
+      //draw different color for each hand state
+      drawHandState(joints[KinectPV2.JointType_HandRight]);
+      drawHandState(joints[KinectPV2.JointType_HandLeft]);
+
+      //Draw body
+      color col  = getIndexColor(i);
+      stroke(col);
+      drawBody(joints);
+      writeCOM(joints, i);
+      writeSkeleton(joints, i);
+      writeHead(joints, i);
+    }
+  }
+  popMatrix();
+
+
+  fill(255, 0, 0);
+  text(frameRate, 50, 50);
+}
+
+//use different color for each skeleton tracked
+color getIndexColor(int index) {
+  color col = color(255);
+  if (index == 0)
+    col = color(255, 0, 0);
+  if (index == 1)
+    col = color(0, 255, 0);
+  if (index == 2)
+    col = color(0, 0, 255);
+  if (index == 3)
+    col = color(255, 255, 0);
+  if (index == 4)
+    col = color(0, 255, 255);
+  if (index == 5)
+    col = color(255, 0, 255);
+
+  return col;
+}
+
+
+void drawBody(KJoint[] joints) {
+  
+  drawBone(joints, KinectPV2.JointType_Head, KinectPV2.JointType_Neck);
+  drawBone(joints, KinectPV2.JointType_Neck, KinectPV2.JointType_SpineShoulder);
+  drawBone(joints, KinectPV2.JointType_SpineShoulder, KinectPV2.JointType_SpineMid);
+
+  drawBone(joints, KinectPV2.JointType_SpineMid, KinectPV2.JointType_SpineBase);
+  
+  
+  drawBone(joints, KinectPV2.JointType_SpineShoulder, KinectPV2.JointType_ShoulderRight);
+  drawBone(joints, KinectPV2.JointType_SpineShoulder, KinectPV2.JointType_ShoulderLeft);
+  
+  
+
+  // Right Arm    
+  drawBone(joints, KinectPV2.JointType_ShoulderRight, KinectPV2.JointType_ElbowRight);
+  drawBone(joints, KinectPV2.JointType_ElbowRight, KinectPV2.JointType_WristRight);
+  drawBone(joints, KinectPV2.JointType_WristRight, KinectPV2.JointType_HandRight);
+  drawBone(joints, KinectPV2.JointType_HandRight, KinectPV2.JointType_HandTipRight);
+  drawBone(joints, KinectPV2.JointType_WristRight, KinectPV2.JointType_ThumbRight);
+
+  // Left Arm
+  drawBone(joints, KinectPV2.JointType_ShoulderLeft, KinectPV2.JointType_ElbowLeft);
+  drawBone(joints, KinectPV2.JointType_ElbowLeft, KinectPV2.JointType_WristLeft);
+  drawBone(joints, KinectPV2.JointType_WristLeft, KinectPV2.JointType_HandLeft);
+  drawBone(joints, KinectPV2.JointType_HandLeft, KinectPV2.JointType_HandTipLeft);
+  drawBone(joints, KinectPV2.JointType_WristLeft, KinectPV2.JointType_ThumbLeft);
+
+  // Right Leg
+  drawBone(joints, KinectPV2.JointType_SpineBase, KinectPV2.JointType_HipRight);
+  drawBone(joints, KinectPV2.JointType_HipRight, KinectPV2.JointType_KneeRight);
+  drawBone(joints, KinectPV2.JointType_KneeRight, KinectPV2.JointType_AnkleRight);
+  drawBone(joints, KinectPV2.JointType_AnkleRight, KinectPV2.JointType_FootRight);
+
+  // Left Leg
+  drawBone(joints, KinectPV2.JointType_SpineBase, KinectPV2.JointType_HipLeft);
+  drawBone(joints, KinectPV2.JointType_HipLeft, KinectPV2.JointType_KneeLeft);
+  drawBone(joints, KinectPV2.JointType_KneeLeft, KinectPV2.JointType_AnkleLeft);
+  drawBone(joints, KinectPV2.JointType_AnkleLeft, KinectPV2.JointType_FootLeft);
+
+  drawJoint(joints, KinectPV2.JointType_HandTipLeft);
+  drawJoint(joints, KinectPV2.JointType_HandTipRight);
+  drawJoint(joints, KinectPV2.JointType_FootLeft);
+  drawJoint(joints, KinectPV2.JointType_FootRight);
+
+  drawJoint(joints, KinectPV2.JointType_ThumbLeft);
+  drawJoint(joints, KinectPV2.JointType_ThumbRight);
+
+  drawJoint(joints, KinectPV2.JointType_Head);
+}
+
+void drawJoint(KJoint[] joints, int jointType) {
+  strokeWeight(2.0f + joints[jointType].getZ()*8);
+  point(joints[jointType].getX(), joints[jointType].getY(), joints[jointType].getZ());
+}
+
+void drawBone(KJoint[] joints, int jointType1, int jointType2) {
+  strokeWeight(2.0f + joints[jointType1].getZ()*8);
+  point(joints[jointType2].getX(), joints[jointType2].getY(), joints[jointType2].getZ());
+}
+
+void drawHandState(KJoint joint) {
+  handState(joint.getState());
+  strokeWeight(5.0f + joint.getZ()*8);
+  point(joint.getX(), joint.getY(), joint.getZ());
+}
+
+void handState(int handState) {
+  switch(handState) {
+  case KinectPV2.HandState_Open:
+    stroke(0, 255, 0);
+    break;
+  case KinectPV2.HandState_Closed:
+    stroke(255, 0, 0);
+    break;
+  case KinectPV2.HandState_Lasso:
+    stroke(0, 0, 255);
+    break;
+  case KinectPV2.HandState_NotTracked:
+    stroke(100, 100, 100);
+    break;
+  }
+}
+
+void writeCOM(KJoint[] joints, int id) {
+  DateTime dt = new DateTime();
+  int y =  dt.getYear() ;
+  int m = dt.getMonthOfYear() ;
+  int d = dt.getDayOfMonth() ;
+  int hour = dt.getHourOfDay() ;
+  int min = dt.getMinuteOfHour() ;
+  int sec = dt.getSecondOfMinute() ;
+  int millis = dt.getMillisOfSecond() ;
+
+  String smillis = str(millis);
+  String ssec = str(sec);
+  String smin = str(min);  
+  String shour = str(hour);
+  String sd = str(d);
+  String sm = str(m);
+
+  if (smillis.length() ==1) {
+    smillis = "00" + smillis;
+  }  
+  if (smillis.length() ==2) {
+    smillis = "0" + smillis;
+  }
+
+  if (ssec.length() == 1) {
+    ssec= "0"+ssec;
+  }
+  if (smin.length() == 1) {
+    smin= "0"+smin;
+  }
+  if (shour.length() == 1) {
+    shour= "0"+shour;
+  }
+
+  if (sd.length() == 1) {
+    sd= "0"+sd;
+  }
+  if (sm.length() == 1) {
+    sm= "0"+sm;
+  }
+
+  int jid = KinectPV2.JointType_SpineBase;
+  KQuaternion orientation = joints[KinectPV2.JointType_SpineBase].getOrientation();
+
+  output.println(  joints[KinectPV2.JointType_SpineBase].getX() + "\t"+ joints[KinectPV2.JointType_SpineBase].getY() + "\t"+joints[KinectPV2.JointType_SpineBase].getZ()+
+    "\t"+ jid + "\t"+ orientation.getX()+ "\t"+ orientation.getY()+ "\t"+ orientation.getZ()+ "\t"+ orientation.getW()+"\t" + id + "\t"+
+
+    y + "_" + sm + "_"+  sd + "_" + shour + "_" + smin + "_" + ssec + "_" + smillis );
+}
+
+void writeHead(KJoint[] joints, int id) {
+  DateTime dt = new DateTime();
+  int y =  dt.getYear() ;
+  int m = dt.getMonthOfYear() ;
+  int d = dt.getDayOfMonth() ;
+  int hour = dt.getHourOfDay() ;
+  int min = dt.getMinuteOfHour() ;
+  int sec = dt.getSecondOfMinute() ;
+  int millis = dt.getMillisOfSecond() ;
+
+  String smillis = str(millis);
+  String ssec = str(sec);
+  String smin = str(min);  
+  String shour = str(hour);
+  String sd = str(d);
+  String sm = str(m);
+
+  if (smillis.length() ==1) {
+    smillis = "00" + smillis;
+  }  
+  if (smillis.length() ==2) {
+    smillis = "0" + smillis;
+  }
+
+  if (ssec.length() == 1) {
+    ssec= "0"+ssec;
+  }
+  if (smin.length() == 1) {
+    smin= "0"+smin;
+  }
+  if (shour.length() == 1) {
+    shour= "0"+shour;
+  }
+
+  if (sd.length() == 1) {
+    sd= "0"+sd;
+  }
+  if (sm.length() == 1) {
+    sm= "0"+sm;
+  }
+
+  KQuaternion orientation1 = joints[KinectPV2.JointType_Head].getOrientation();
+  KQuaternion orientation2 = joints[KinectPV2.JointType_Neck].getOrientation();
+  KQuaternion orientation3 = joints[KinectPV2.JointType_SpineShoulder].getOrientation();
+  
+  output3.println(  
+  
+    joints[KinectPV2.JointType_Head].getX() + "\t"+ joints[KinectPV2.JointType_Head].getY() + "\t"+joints[KinectPV2.JointType_Head].getZ()+ "t"+
+   orientation1.getX()+ "\t"+ orientation1.getY()+ "\t"+ orientation1.getZ()+ "\t"+ orientation1.getW()+ "\t"+ 
+   
+   joints[KinectPV2.JointType_Neck].getX() + "\t"+ joints[KinectPV2.JointType_Neck].getY() + "\t"+joints[KinectPV2.JointType_Neck].getZ()+ "t"+
+   orientation2.getX()+ "\t"+ orientation2.getY()+ "\t"+ orientation2.getZ()+ "\t"+ orientation2.getW()+ "\t"+ 
+   
+   joints[KinectPV2.JointType_SpineShoulder].getX() + "\t"+ joints[KinectPV2.JointType_SpineShoulder].getY() + "\t"+joints[KinectPV2.JointType_SpineShoulder].getZ()+ "t"+
+   orientation3.getX()+ "\t"+ orientation3.getY()+ "\t"+ orientation3.getZ()+ "\t"+ orientation3.getW()+ "\t"+    
+    "\t" + id + "\t" +
+    y + "_" + sm + "_"+  sd + "_" + shour + "_" + smin + "_" + ssec + "_" + smillis );
+}
+
+
+
+void writeSkeleton(KJoint[] joints, int id) {
+  DateTime dt = new DateTime();
+  int y =  dt.getYear() ;
+  int m = dt.getMonthOfYear() ;
+  int d = dt.getDayOfMonth() ;
+  int hour = dt.getHourOfDay() ;
+  int min = dt.getMinuteOfHour() ;
+  int sec = dt.getSecondOfMinute() ;
+  int millis = dt.getMillisOfSecond() ;
+
+  String smillis = str(millis);
+  String ssec = str(sec);
+  String smin = str(min);  
+  String shour = str(hour);
+  String sd = str(d);
+  String sm = str(m);
+
+  if (smillis.length() ==1) {
+    smillis = "00" + smillis;
+  }  
+  if (smillis.length() ==2) {
+    smillis = "0" + smillis;
+  }  
+  if (ssec.length() == 1) {
+    ssec= "0"+ssec;
+  }
+  if (smin.length() == 1) {
+    smin= "0"+smin;
+  }
+  if (shour.length() == 1) {
+    shour= "0"+shour;
+  }  
+  if (sd.length() == 1) {
+    sd= "0"+sd;
+  }
+  if (sm.length() == 1) {
+    sm= "0"+sm;
+  }
+
+  output2.println(  
+   
+   // 0,1,2
+   joints[KinectPV2.JointType_Head].getX() + "\t"+ joints[KinectPV2.JointType_Head].getY() + "\t"+joints[KinectPV2.JointType_Head].getZ()+ "t"+
+  
+  // 3,4,5
+   joints[KinectPV2.JointType_Neck].getX() + "\t"+ joints[KinectPV2.JointType_Neck].getY() + "\t"+joints[KinectPV2.JointType_Neck].getZ()+ "t"+
+ 
+  //6,7,8
+   joints[KinectPV2.JointType_SpineShoulder].getX() + "\t"+ joints[KinectPV2.JointType_SpineShoulder].getY() + "\t"+joints[KinectPV2.JointType_SpineShoulder].getZ()+ "t"+
+
+   //9,10,11
+   joints[KinectPV2.JointType_SpineMid].getX() + "\t"+ joints[KinectPV2.JointType_SpineMid].getY() + "\t"+joints[KinectPV2.JointType_SpineMid].getZ()+ "t"+
+
+   //12,13,14
+   joints[KinectPV2.JointType_SpineBase].getX() + "\t"+ joints[KinectPV2.JointType_SpineBase].getY() + "\t"+joints[KinectPV2.JointType_SpineBase].getZ()+ "t"+
+
+   //15/16/17
+   joints[KinectPV2.JointType_ShoulderRight].getX() + "\t"+ joints[KinectPV2.JointType_ShoulderRight].getY() + "\t"+joints[KinectPV2.JointType_ShoulderRight].getZ()+ "t"+
+
+   //18/19/20
+   joints[KinectPV2.JointType_ShoulderLeft].getX() + "\t"+ joints[KinectPV2.JointType_ShoulderLeft].getY() + "\t"+joints[KinectPV2.JointType_ShoulderLeft].getZ()+ "t"+
+
+   // /21/22/23
+   joints[KinectPV2.JointType_HipRight].getX() + "\t"+ joints[KinectPV2.JointType_HipRight].getY() + "\t"+joints[KinectPV2.JointType_HipRight].getZ()+ "t"+
+
+   ///24/25/26
+   joints[KinectPV2.JointType_HipLeft].getX() + "\t"+ joints[KinectPV2.JointType_HipLeft].getY() + "\t"+joints[KinectPV2.JointType_HipLeft].getZ()+ "t"+
+
+   
+   
+   
+   // Right Arm   //27/28/29
+   joints[KinectPV2.JointType_ElbowRight].getX() + "\t"+ joints[KinectPV2.JointType_ElbowRight].getY() + "\t"+joints[KinectPV2.JointType_ElbowRight].getZ()+ "t"+
+   //30/31/32
+   joints[KinectPV2.JointType_WristRight].getX() + "\t"+ joints[KinectPV2.JointType_WristRight].getY() + "\t"+joints[KinectPV2.JointType_WristRight].getZ()+ "t"+
+  //33/34/35
+   joints[KinectPV2.JointType_HandRight].getX() + "\t"+ joints[KinectPV2.JointType_HandRight].getY() + "\t"+joints[KinectPV2.JointType_HandRight].getZ()+ "t"+
+   //36/37/38
+   joints[KinectPV2.JointType_HandTipRight].getX() + "\t"+ joints[KinectPV2.JointType_HandTipRight].getY() + "\t"+joints[KinectPV2.JointType_HandTipRight].getZ()+ "t"+
+   //39/40/41/
+   joints[KinectPV2.JointType_ThumbRight].getX() + "\t"+ joints[KinectPV2.JointType_ThumbRight].getY() + "\t"+joints[KinectPV2.JointType_ThumbRight].getZ()+ "t"+
+   
+   //42/43/45/   // Left Arm
+   joints[KinectPV2.JointType_ElbowLeft].getX() + "\t"+ joints[KinectPV2.JointType_ElbowLeft].getY() + "\t"+joints[KinectPV2.JointType_ElbowLeft].getZ()+ "t"+
+   //46/47/48/
+   joints[KinectPV2.JointType_WristLeft].getX() + "\t"+ joints[KinectPV2.JointType_WristLeft].getY() + "\t"+joints[KinectPV2.JointType_WristLeft].getZ()+ "t"+
+  //49/50/51
+   joints[KinectPV2.JointType_HandLeft].getX() + "\t"+ joints[KinectPV2.JointType_HandLeft].getY() + "\t"+joints[KinectPV2.JointType_HandLeft].getZ()+ "t"+
+   //52/53/54
+   joints[KinectPV2.JointType_HandTipLeft].getX() + "\t"+ joints[KinectPV2.JointType_HandTipLeft].getY() + "\t"+joints[KinectPV2.JointType_HandTipLeft].getZ()+ "t"+
+   //55/56/57
+   joints[KinectPV2.JointType_ThumbLeft].getX() + "\t"+ joints[KinectPV2.JointType_ThumbLeft].getY() + "\t"+joints[KinectPV2.JointType_ThumbLeft].getZ()+ "t"+
+  
+   
+   
+   //58/59/60/ // Right Leg
+   joints[KinectPV2.JointType_KneeRight].getX() + "\t"+ joints[KinectPV2.JointType_KneeRight].getY() + "\t"+joints[KinectPV2.JointType_KneeRight].getZ()+ "t"+
+   //61/62/63
+   joints[KinectPV2.JointType_AnkleRight].getX() + "\t"+ joints[KinectPV2.JointType_AnkleRight].getY() + "\t"+joints[KinectPV2.JointType_AnkleRight].getZ()+ "t"+
+   //64/65/66
+   joints[KinectPV2.JointType_FootRight].getX() + "\t"+ joints[KinectPV2.JointType_FootRight].getY() + "\t"+joints[KinectPV2.JointType_FootRight].getZ()+ "t"+
+   
+   //67/68/69 // Left Leg
+   joints[KinectPV2.JointType_KneeLeft].getX() + "\t"+ joints[KinectPV2.JointType_KneeLeft].getY() + "\t"+joints[KinectPV2.JointType_KneeLeft].getZ()+ "t"+
+   //70/71/72
+   joints[KinectPV2.JointType_AnkleLeft].getX() + "\t"+ joints[KinectPV2.JointType_AnkleLeft].getY() + "\t"+joints[KinectPV2.JointType_AnkleLeft].getZ()+ "t"+
+   //73/74/75
+   joints[KinectPV2.JointType_FootLeft].getX() + "\t"+ joints[KinectPV2.JointType_FootLeft].getY() + "\t"+joints[KinectPV2.JointType_FootLeft].getZ()+ "t"+ 
+   //76
+   id +"\t"+ 
+   //77
+   y + "_" + sm + "_"+  sd + "_" + shour + "_" + smin + "_" + ssec + "_" + smillis );
+      
+}

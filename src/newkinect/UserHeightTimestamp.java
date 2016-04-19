@@ -2,6 +2,8 @@ package newkinect;
 
 import java.time.LocalDateTime;
 
+import javafx.geometry.Point3D;
+
 public class UserHeightTimestamp {
     private double height;
     private LocalDateTime dateTime;
@@ -26,6 +28,6 @@ public class UserHeightTimestamp {
     }
     
     public String toString() {
-        return height + " at " + dateTime;
+        return "user: " + user + ", " + height + " at " + dateTime;
     }
 }

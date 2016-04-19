@@ -453,12 +453,10 @@ public class Height {
         double totalObservationCount = processedData.size();
         // Accounting for the most frequently observed heights within a measurement range
         double mostFrequentHeightSum = 0.0;
-        double mostFrequentObservedCount = 0.0;
         // Accounting for the first FIRST_HEIGHTS_SEEN observed heights
         // Placing extra weight on these observation because people are most likely in a normal stature
         // when they first enter a room (when the kinect first tracks them in this case)
         double firstObservedSum = 0.0;
-        double firstObservedCount = 0.0;
         // maximum level of discrepancy allowed between first observed height average and most frequently observed height average
         double START_VS_FREQ_DIFF = 0.2;
         // the number of first heights seen that are given more weight
@@ -514,19 +512,17 @@ public class Height {
         // take average of heights in biggest bin
         for (double height : bins.get(maxBin)) {
             mostFrequentHeightSum += height;
-            mostFrequentObservedCount += 1;
         }
-        double freqHeightAvg = freqHeightSum / freqTotalNumber;
+        double freqHeightAvg = mostFrequentHeightSum / bins.get(maxBin).size();
 
         // account for heights read when person first appears, since likely to be their true height
         for (double height : startHeights) {
-            startHeightSum += height;
-            startTotalNumber += 1;
+            firstObservedSum += height;
         }
-        double startHeightAvg = startHeightSum / startTotalNumber;
+        double startHeightAvg = firstObservedSum / startHeights.size();
 
         // the naively computed average of all heights observed
-        double allHeightAvg = allHeightSum / allTotalNumber;
+        double allHeightAvg = totalHeightSum / totalObservationCount;
 
         // if the first observed heights are similar to the most observed heights, take the average
         double heightAvg = 0.0;

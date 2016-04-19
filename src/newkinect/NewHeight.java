@@ -46,14 +46,11 @@ public class NewHeight {
 
     public static void main(String[] args) {
         try {
-            System.out.println("Head Height Data: ");
-            String rawHeadDataPath = "src/Hospital_Data/Paloma_Cleaned_Skeleton/sk wo noise 2.txt";
-            System.out.println("\nNow for skeleton height data:");
-            String rawSkelDataPath = "src/Hospital_Data/Paloma_Cleaned_Skeleton/sk wo noise 2.txt";
+            String rawSkelDataPath = "src/height_test_data/SkeletonTextData/skeleton OpenPantry_3_Leo.txt";
             File organizedSkelFile = organizeRawSkelData(rawSkelDataPath);
             List<UserHeightTimestamp> processedSkelData = processOrganizedSkelData(organizedSkelFile, rawSkelDataPath);
-            //            double skelHeightFound = getSkeletonHeight(processedSkelData);
-            //            System.out.println("Computed height from detected joints:" + skelHeightFound);
+            double skelHeightFound = getSkeletonHeight(processedSkelData);
+            System.out.println("Computed height from detected joints: " + skelHeightFound);
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -165,7 +162,7 @@ public class NewHeight {
      * @return the point next read by the scanner
      */
     private static Point3D readNextXYZ(Scanner scan) {
-        
+
         Point3D realCoords = getRealCoord(Double.parseDouble(scan.next()), 
                 Double.parseDouble(scan.next()), Double.parseDouble(scan.next()), 
                 KINECT_ANGLE_VERTICAL, KINECT_ANGLE_HORIZONTAL, KINECT_HEIGHT);
@@ -341,7 +338,7 @@ public class NewHeight {
             LocalDateTime dateTime = LocalDateTime.parse(line.substring(line.lastIndexOf("-")-7));
 
             Scanner scan = new Scanner(line.substring(line.indexOf("\t")+1, line.lastIndexOf("\t")).trim());
-            
+
             Point3D head = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()) + HEAD_DIFFERENCE,
                     Double.parseDouble(scan.next()));
             Point3D neck = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
@@ -373,13 +370,13 @@ public class NewHeight {
 
             if (m>0) {
                 double speed = lastCom.distance(currentCom) / (lastDateTime.until(dateTime, ChronoUnit.MILLIS));
-
+                // make sure spinebase is higher than knees
                 if (speed < MIN_WALKING_SPEED && 
-                        spineBase.getY() > ((kneeRight.getY() + kneeLeft.getY()) /2) * 1.4) {
-
-                    double totalHeight = calculateInstanceSkeletonHeight(head, neck, spineShoulder, spineMid, spineBase,
-                            hipRight, hipLeft, kneeRight, ankleRight, footRight, kneeLeft, ankleLeft, footLeft);
-
+                        spineBase.getY() > ((kneeRight.getY() + kneeLeft.getY()) /2)) {
+                    
+                    double totalHeight = calculateInstanceSkeletonHeight(spineBase, spineMid, neck, head,
+                            hipLeft, kneeLeft, ankleLeft, footLeft, hipRight, kneeRight, ankleRight, footRight, spineShoulder);
+                    
                     processedData.add(new UserHeightTimestamp("user", totalHeight, dateTime));
 
                     scan.close();
@@ -395,6 +392,7 @@ public class NewHeight {
         buffReader.close();
         buffWriter.close();
         return processedData; 
+ 
     }
 
     /**
@@ -422,7 +420,7 @@ public class NewHeight {
     public static double calculateInstanceSkeletonHeight(Point3D spineBase, Point3D spineMid, Point3D neck,
             Point3D head, Point3D hipLeft, Point3D kneeLeft, Point3D ankleLeft, Point3D footLeft,
             Point3D hipRight, Point3D kneeRight, Point3D ankleRight, Point3D footRight, Point3D spineShoulder) {
-        
+
         double torsoHeight = head.distance(neck) + neck.distance(spineShoulder) + spineShoulder.distance(spineMid) +
                 spineMid.distance(spineBase) + spineBase.distance(avgPoint(hipRight, hipLeft));
 
@@ -434,10 +432,10 @@ public class NewHeight {
 
         // take average of leg heights
         double totalHeight = torsoHeight + ((rightLegHeight + leftLegHeight)/2);
-        
+
         return totalHeight;
     }
-    
+
     /**
      * Places a height value into its respective bin, where each bin spans a measurement range in meters
      * @param currentHeight the height in meters to be placed in a bin
@@ -456,7 +454,7 @@ public class NewHeight {
         double ONE_AND_HALF_METER = 1.5;
         double ONE_AND_THREE_QUARTER_METER = 1.75;
         double TWO_METER = 2;
-        
+
         if (currentHeight >= HALF_METER && currentHeight < ONE_METER) {
             bin0.add(currentHeight);
         } else if (currentHeight >= THREE_QUARTER_METER && currentHeight < ONE_AND_QUARTER_METER) {
@@ -469,12 +467,12 @@ public class NewHeight {
             bin4.add(currentHeight);
         }
     }
-    
+
     public static double calculateMostFrequentHeightAverage(List<Double> bin0, List<Double> bin1, List<Double> bin2,
             List<Double> bin3, List<Double> bin4) {
-        
+
         double mostFrequentHeightSum = 0.0;
-        
+
         List<List<Double>> bins = Arrays.asList(bin0, bin1, bin2, bin3, bin4);
         int maxBin = 0;
         for (int i = 1; i < bins.size(); i++){
@@ -490,7 +488,7 @@ public class NewHeight {
         double freqHeightAvg = mostFrequentHeightSum / (double) bins.get(maxBin).size();
         return freqHeightAvg;
     }
-    
+
     /**
      * Calculate the estimated height of the user from the observed skeleton heights over the time span of detection
      * @param processedData the calculated heights of the user at different times
@@ -509,7 +507,7 @@ public class NewHeight {
         // the number of first heights seen that are given more weight
         double FIRST_HEIGHTS_OBSERVED = 30;  
         int heightsObserved = 0;
-        
+
         final List<Double> startHeights = new ArrayList<>();
         final List<Double> bin0 = new ArrayList<>();
         final List<Double> bin1 = new ArrayList<>();

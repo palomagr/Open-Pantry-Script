@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
-
 import javafx.geometry.Point3D;
 
 public class Height {
@@ -373,16 +372,33 @@ public class Height {
             Point3D footLeft = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
                     Double.parseDouble(scan.next()));
 
+//            buffWriter.write(ID_DELIMS[userID] + "\t" + 
+//                  realSpineBaseCoords.getX() + "\t" + realSpineBaseCoords.getY() + "\t" + realSpineBaseCoords.getZ() + "\t" +
+//                  realSpineMidCoords.getX() + "\t" + realSpineMidCoords.getY() + "\t" + realSpineMidCoords.getZ() + "\t" +
+//                  realNeckCoords.getX() + "\t" + realNeckCoords.getY() + "\t" + realNeckCoords.getZ() + "\t" +
+//                  realHeadCoords.getX() + "\t" + realHeadCoords.getY() + "\t" + realHeadCoords.getZ() + "\t" +
+//                  realHipLeftCoords.getX() + "\t" + realHipLeftCoords.getY() + "\t" + realHipLeftCoords.getZ() + "\t" +
+//                  realKneeLeftCoords.getX() + "\t" + realKneeLeftCoords.getY() + "\t" + realKneeLeftCoords.getZ() + "\t" +
+//                  realAnkleLeftCoords.getX() + "\t" + realAnkleLeftCoords.getY() + "\t" + realAnkleLeftCoords.getZ() + "\t" +
+//                  realFootLeftCoords.getX() + "\t" + realFootLeftCoords.getY() + "\t" + realFootLeftCoords.getZ() + "\t" +
+//                  realHipRightCoords.getX() + "\t" + realHipRightCoords.getY() + "\t" + realHipRightCoords.getZ() + "\t" +
+//                  realKneeRightCoords.getX() + "\t" + realKneeRightCoords.getY() + "\t" + realKneeRightCoords.getZ() + "\t" +
+//                  realAnkleRightCoords.getX() + "\t" + realAnkleRightCoords.getY() + "\t" + realAnkleRightCoords.getZ() + "\t" +
+//                  realFootRightCoords.getX() + "\t" + realFootRightCoords.getY() + "\t" + realFootRightCoords.getZ() + "\t" +
+//                  realSpineShoulderCoords.getX() + "\t" + realSpineShoulderCoords.getY() + "\t" + realSpineShoulderCoords.getZ() + "\t" +
+//                  timeStamp + "\n");
+            
             Point3D currentCom = avgPoint(spineMid, spineBase);
-
+            Skeleton currentSkeleton = new Skeleton(spineBase, spineMid, neck, head, hipLeft, kneeLeft, 
+                    ankleLeft, footLeft, hipRight, kneeRight, ankleRight, footRight, spineShoulder);
+            
             if (m>0) {
                 double speed = lastCom.distance(currentCom) / (lastDateTime.until(dateTime, ChronoUnit.MILLIS));
 
                 if (speed < MIN_WALKING_SPEED && 
                         spineBase.getY() > ((kneeRight.getY() + kneeLeft.getY()) /2) * 1.4) {
 
-                    double totalHeight = calculateInstanceSkeletonHeight(head, neck, spineShoulder, spineMid, spineBase,
-                            hipRight, hipLeft, kneeRight, ankleRight, footRight, kneeLeft, ankleLeft, footLeft);
+                    double totalHeight = currentSkeleton.getHeight();
 
                     processedData.add(new UserHeightTimestamp("user", totalHeight, dateTime));
 
@@ -539,289 +555,289 @@ public class Height {
 
         return heightAvg;
     }
+
+
+    /**
+     * 
+     * @param rawDataPath
+     * @return
+     * @throws IOException
+     */
+    public static File organizeRawHeadData(final String rawDataPath) throws IOException {
+        System.out.println("Organizing Head Data...");
+
+        String modifier = "organized";
+        FileReader reader = new FileReader(rawDataPath); 
+        BufferedReader buffReader = new BufferedReader(reader); 
+        BufferedWriter buffWriter = getBufferedWriter(rawDataPath, modifier); 
+
+        String line = "";
+
+        while(line != null) { 
+            line = buffReader.readLine();
+            if(line != null && line.length() > 220) { 
+                LocalDateTime timeStamp = getLocalDateTime(line.substring(line.lastIndexOf("\t")+1));
+                String lineWOTimeID = line.substring(0,line.lastIndexOf("\t")-1).trim(); 
+                int userID = Character.getNumericValue(line.charAt(line.lastIndexOf("\t")-1));
+
+                if(!onlyZeros(lineWOTimeID)) { //check for useless data
+                    Scanner scan = new Scanner(line);
+                    Point3D realHeadCoords = getRealCoord(Double.parseDouble(scan.next()), 
+                            Double.parseDouble(scan.next()), Double.parseDouble(scan.next()), 
+                            KINECT_ANGLE_VERTICAL, KINECT_ANGLE_HORIZONTAL, KINECT_HEIGHT);
+                    buffWriter.write("User: " + userID + ";" + "\t" + realHeadCoords.getX() + "\t" 
+                            + realHeadCoords.getY() + "\t" + realHeadCoords.getZ() + "\t" + timeStamp + "\n");
+                    scan.close();
+                }
+            }
+        } 
+
+        buffReader.close();
+        buffWriter.close();
+        return new File(rawDataPath.substring(0, rawDataPath.lastIndexOf("."))
+                + " " + modifier + ".txt");
+    }
+
+    public static List<UserHeightTimestamp>[] processOrganizedHeadData(final String rawDataPath) throws IOException {
+        System.out.println("Processing Head Data...");
+
+        String modifier = "head_locations";
+        FileReader reader = new FileReader(rawDataPath);
+        BufferedReader buffReader = new BufferedReader(reader);
+        BufferedWriter buffWriter = getBufferedWriter(rawDataPath, modifier);
+        List<UserHeightTimestamp>[] processedData = new ArrayList[ID_DELIMS.length];
+        for (int i = 0; i < processedData.length; i++) {
+            processedData[i] = new ArrayList<>();
+        }
+
+        buffReader.readLine(); // skip first timestamp
+        String line = buffReader.readLine(); 
+        while(line != null) {
+            // read the time stamp of the line of data
+            LocalDateTime dateTime = LocalDateTime.parse(line.substring(line.lastIndexOf("-")-7));
+            // Check if line has user x data; if so, add x, x's height, and time stamp to list and write to file
+            for(int i = 0; i < ID_DELIMS.length; i++) {
+                if(line.contains(ID_DELIMS[i])) {
+                    Scanner scan = new Scanner(line.substring(line.indexOf(ID_DELIMS[i])+1, line.lastIndexOf(ID_DELIMS[i])).trim());
+                    Point3D point = new Point3D(Double.parseDouble(scan.next()), 
+                            Double.parseDouble(scan.next()) + HEAD_DIFFERENCE, 
+                            Double.parseDouble(scan.next()));
+                    // add the user, read head location, and the time stamp to the list
+                    processedData[i].add(new UserHeightTimestamp(ID_DELIMS[i], point.getY(), dateTime));
+                    scan.close();
+                    // write the user, read height, and the time stamp it was read out to a new file
+                    buffWriter.write("User " + ID_DELIMS[i] + ": " + point.getY() + "\t");
+                }
+            }
+            buffWriter.write("\n");
+            line = buffReader.readLine();
+        }
+
+        buffReader.close();
+        buffWriter.close();
+        return processedData; 
+    }
+
+    public static List<Double> getHeadHeight(final List<UserHeightTimestamp>[] processedData, final String rawDataPath) {
+        System.out.println("Computing User Heights");
+        List<LocalDateTime> startDateTimes = new ArrayList<>();
+        List<LocalDateTime> endDateTimes = new ArrayList<>(); 
+        List<List<Double>> subjectHeights = new ArrayList<>();
+
+        for(List<UserHeightTimestamp> singleUserData : processedData) {
+            System.out.println("Looking at new user UserHeightTimestamp data");
+            if(!singleUserData.isEmpty()) {
+                List<Double> userHeights = new ArrayList<>();
+                startDateTimes.add(singleUserData.get(0).getDateTime());
+                for(int i = 1; i < singleUserData.size(); i++) {
+                    LocalDateTime dateTime = singleUserData.get(i).getDateTime();
+                    LocalDateTime prevDateTime = singleUserData.get(i).getDateTime();
+                    Point3D currentLocation = singleUserData.get(i).getLocation();
+                    Point3D prevLocation = singleUserData.get(i-1).getLocation();
+                    double prevHeight = prevLocation.getY();
+
+                    if (prevHeight < MAX_PERSON_HEIGHT) //filter heights/noise
+                        userHeights.add(prevHeight);   
+
+                    // check if next value of time stamp is longer than certain time period after current time stamp
+                    // this would suggest a different user is now being detected
+                    //                    if (false) {
+                    if (prevDateTime.plusSeconds(SECONDS_ABSENT_NEW_PERSON).isBefore(dateTime)) { 
+                        if(prevDateTime.plusMinutes(2).isAfter(dateTime)) { //re-entry check
+                            Point3D vector = currentLocation.subtract(prevLocation);
+                            // add this user's detected heights, entry time, departure time to data and reset values
+                            if(!userHeights.isEmpty()) {
+                                subjectHeights.add(userHeights);
+                                userHeights = new ArrayList<>();
+                                endDateTimes.add(prevDateTime);
+                                startDateTimes.add(dateTime);
+                            }
+                        }
+                    }
+                    else {
+                        if(!userHeights.isEmpty()) {
+                            subjectHeights.add(userHeights);
+                            userHeights = new ArrayList<>();
+
+                            endDateTimes.add(prevDateTime);
+                            startDateTimes.add(dateTime);
+                        }
+                    }
+                }
+                subjectHeights.add(userHeights);
+                endDateTimes.add(singleUserData.get(singleUserData.size()-1).getDateTime());
+            }
+        }
+
+        List<Double> usersHeights = new ArrayList<>();
+        //look at each user
+        for(int i = 0; i < subjectHeights.size(); i++) {
+            System.out.println("subjectHeights.size: " + subjectHeights.size());
+            //            System.out.println("Calculating height of new user!");
+            double startHeightSum = 0.0;
+            double startTotalNumber = 0.0;
+            double freqHeightSum = 0.0;
+            double freqTotalNumber = 0.0;
+            double allHeightSum = 0.0;
+            double allTotalNumber = subjectHeights.get(i).size();
+
+            double START_VS_FREQ_DIFF = 0.2;
+            double FIRST_HEIGHTS_SEEN = 30;  
+            double heightsSeen = 0.0;
+            // look at a detected user's total consecutively detected heights
+            List<Double> currentUserHeights = subjectHeights.get(i);
+            for(double currentHeight : currentUserHeights) {
+                heightsSeen += 1;
+                allHeightSum += currentHeight;
+
+                if (heightsSeen <= FIRST_HEIGHTS_SEEN) {
+                    startHeights.add(currentHeight);
+                }
+                if (currentHeight >= 0.5 && currentHeight < 1) {
+                    twoToThree.add(currentHeight);
+                } else if (currentHeight >= 0.75 && currentHeight < 1.25) {
+                    threeToFour.add(currentHeight);
+                } else if (currentHeight >= 1 && currentHeight < 1.5) {
+                    fourToFive.add(currentHeight);
+                } else if (currentHeight >= 1.25 && currentHeight < 1.75) {
+                    fiveToSix.add(currentHeight);
+                } else if (currentHeight >= 1.5 && currentHeight < MAX_PERSON_HEIGHT) {
+                    sixToSeven.add(currentHeight);
+                }
+            }
+
+            List<List<Double>> bins = Arrays.asList(twoToThree, threeToFour, fourToFive, fiveToSix,
+                    sixToSeven);
+            // find bin of heights with most readings
+            int maxIndex = 0;
+            for (int binNumb = 0; binNumb < bins.size(); binNumb++){
+                double newNumber = bins.get(binNumb).size();
+                if (newNumber > bins.get(maxIndex).size()){
+                    maxIndex = binNumb;
+                }
+            }
+            // take average of heights in biggest bin
+            int biggestBin = maxIndex;
+            for (double heightValue : bins.get(biggestBin)) {
+                freqHeightSum += heightValue;
+                freqTotalNumber += 1;
+            }
+            double freqHeightAvg = freqHeightSum / freqTotalNumber;
+
+            // account for heights read when person first appears, since likely to be their true height
+            for (double height : startHeights) {
+                startHeightSum += height;
+                startTotalNumber += 1;
+            }
+            double startHeightAvg = startHeightSum / startTotalNumber;
+
+            // the naively computed average of all heights observed
+            double allHeightAvg = allHeightSum / allTotalNumber;
+
+            // if the first observed heights are similar to the most observed heights, take the average
+            double heightAvg = 0.0;
+            if (Math.abs(freqHeightAvg - startHeightAvg) < START_VS_FREQ_DIFF) {
+                heightAvg = (freqHeightAvg + startHeightAvg) / 2;
+            } else {
+                heightAvg = freqHeightAvg;
+            }
+            //          System.out.println("Average of frequently observed heights is: " + freqHeightAvg);
+            //        System.out.println("Average of first observed heights is: " + startHeightAvg);
+            //        System.out.println("The naive average: " + allHeightAvg);
+            //        System.out.println("The revised average: " + heightAvg);
+
+            usersHeights.add(heightAvg);
+        }
+        // each user has been looked at
+        for(int j = 0; j < startDateTimes.size(); j++) {
+            System.out.println("User " + j + "; Entry time: " + startDateTimes.get(j) + "; height: " + usersHeights.get(j));
+        }
+        return usersHeights;
+    }
 }
 
-//    /**
-//     * 
-//     * @param rawDataPath
-//     * @return
-//     * @throws IOException
-//     */
-//    public static File organizeRawHeadData(final String rawDataPath) throws IOException {
-//        System.out.println("Organizing Head Data...");
-//
-//        String modifier = "organized";
-//        FileReader reader = new FileReader(rawDataPath); 
-//        BufferedReader buffReader = new BufferedReader(reader); 
-//        BufferedWriter buffWriter = getBufferedWriter(rawDataPath, modifier); 
-//
-//        String line = "";
-//
-//        while(line != null) { 
-//            line = buffReader.readLine();
-//            if(line != null && line.length() > 220) { 
-//                LocalDateTime timeStamp = getLocalDateTime(line.substring(line.lastIndexOf("\t")+1));
-//                String lineWOTimeID = line.substring(0,line.lastIndexOf("\t")-1).trim(); 
-//                int userID = Character.getNumericValue(line.charAt(line.lastIndexOf("\t")-1));
-//
-//                if(!onlyZeros(lineWOTimeID)) { //check for useless data
-//                    Scanner scan = new Scanner(line);
-//                    Point3D realHeadCoords = getRealCoord(Double.parseDouble(scan.next()), 
-//                            Double.parseDouble(scan.next()), Double.parseDouble(scan.next()), 
-//                            KINECT_ANGLE_VERTICAL, KINECT_ANGLE_HORIZONTAL, KINECT_HEIGHT);
-//                    buffWriter.write("User: " + userID + ";" + "\t" + realHeadCoords.getX() + "\t" 
-//                            + realHeadCoords.getY() + "\t" + realHeadCoords.getZ() + "\t" + timeStamp + "\n");
-//                    scan.close();
-//                }
-//            }
-//        } 
-//
-//        buffReader.close();
-//        buffWriter.close();
-//        return new File(rawDataPath.substring(0, rawDataPath.lastIndexOf("."))
-//                + " " + modifier + ".txt");
-//    }
-//
-//    public static List<UserHeightTimestamp>[] processOrganizedHeadData(final String rawDataPath) throws IOException {
-//        System.out.println("Processing Head Data...");
-//
-//        String modifier = "head_locations";
-//        FileReader reader = new FileReader(rawDataPath);
-//        BufferedReader buffReader = new BufferedReader(reader);
-//        BufferedWriter buffWriter = getBufferedWriter(rawDataPath, modifier);
-//        List<UserHeightTimestamp>[] processedData = new ArrayList[ID_DELIMS.length];
-//        for (int i = 0; i < processedData.length; i++) {
-//            processedData[i] = new ArrayList<>();
-//        }
-//
-//        buffReader.readLine(); // skip first timestamp
-//        String line = buffReader.readLine(); 
-//        while(line != null) {
-//            // read the time stamp of the line of data
-//            LocalDateTime dateTime = LocalDateTime.parse(line.substring(line.lastIndexOf("-")-7));
-//            // Check if line has user x data; if so, add x, x's height, and time stamp to list and write to file
-//            for(int i = 0; i < ID_DELIMS.length; i++) {
-//                if(line.contains(ID_DELIMS[i])) {
-//                    Scanner scan = new Scanner(line.substring(line.indexOf(ID_DELIMS[i])+1, line.lastIndexOf(ID_DELIMS[i])).trim());
-//                    Point3D point = new Point3D(Double.parseDouble(scan.next()), 
-//                            Double.parseDouble(scan.next()) + HEAD_DIFFERENCE, 
-//                            Double.parseDouble(scan.next()));
-//                    // add the user, read head location, and the time stamp to the list
-//                    processedData[i].add(new UserHeightTimestamp(ID_DELIMS[i], point.getY(), dateTime));
-//                    scan.close();
-//                    // write the user, read height, and the time stamp it was read out to a new file
-//                    buffWriter.write("User " + ID_DELIMS[i] + ": " + point.getY() + "\t");
-//                }
-//            }
-//            buffWriter.write("\n");
-//            line = buffReader.readLine();
-//        }
-//
-//        buffReader.close();
-//        buffWriter.close();
-//        return processedData; 
-//    }
-//
-//    public static List<Double> getHeadHeight(final List<UserHeightTimestamp>[] processedData, final String rawDataPath) {
-//        System.out.println("Computing User Heights");
-//        List<LocalDateTime> startDateTimes = new ArrayList<>();
-//        List<LocalDateTime> endDateTimes = new ArrayList<>(); 
-//        List<List<Double>> subjectHeights = new ArrayList<>();
-//
-//        for(List<UserHeightTimestamp> singleUserData : processedData) {
-//            System.out.println("Looking at new user UserHeightTimestamp data");
-//            if(!singleUserData.isEmpty()) {
-//                List<Double> userHeights = new ArrayList<>();
-//                startDateTimes.add(singleUserData.get(0).getDateTime());
-//                for(int i = 1; i < singleUserData.size(); i++) {
-//                    LocalDateTime dateTime = singleUserData.get(i).getDateTime();
-//                    LocalDateTime prevDateTime = singleUserData.get(i).getDateTime();
-//                    Point3D currentLocation = singleUserData.get(i).getLocation();
-//                    Point3D prevLocation = singleUserData.get(i-1).getLocation();
-//                    double prevHeight = prevLocation.getY();
-//
-//                    if (prevHeight < MAX_PERSON_HEIGHT) //filter heights/noise
-//                        userHeights.add(prevHeight);   
-//
-//                    // check if next value of time stamp is longer than certain time period after current time stamp
-//                    // this would suggest a different user is now being detected
-//                    //                    if (false) {
-//                    if (prevDateTime.plusSeconds(SECONDS_ABSENT_NEW_PERSON).isBefore(dateTime)) { 
-//                        if(prevDateTime.plusMinutes(2).isAfter(dateTime)) { //re-entry check
-//                            Point3D vector = currentLocation.subtract(prevLocation);
-//                            // add this user's detected heights, entry time, departure time to data and reset values
-//                            if(!userHeights.isEmpty()) {
-//                                subjectHeights.add(userHeights);
-//                                userHeights = new ArrayList<>();
-//                                endDateTimes.add(prevDateTime);
-//                                startDateTimes.add(dateTime);
-//                            }
-//                        }
-//                    }
-//                    else {
-//                        if(!userHeights.isEmpty()) {
-//                            subjectHeights.add(userHeights);
-//                            userHeights = new ArrayList<>();
-//
-//                            endDateTimes.add(prevDateTime);
-//                            startDateTimes.add(dateTime);
-//                        }
-//                    }
-//                }
-//                subjectHeights.add(userHeights);
-//                endDateTimes.add(singleUserData.get(singleUserData.size()-1).getDateTime());
-//            }
-//        }
-//
-//        List<Double> usersHeights = new ArrayList<>();
-//        // look at each user
-//        for(int i = 0; i < subjectHeights.size(); i++) {
-//            System.out.println("subjectHeights.size: " + subjectHeights.size());
-//            //            System.out.println("Calculating height of new user!");
-//            double startHeightSum = 0.0;
-//            double startTotalNumber = 0.0;
-//            double freqHeightSum = 0.0;
-//            double freqTotalNumber = 0.0;
-//            double allHeightSum = 0.0;
-//            double allTotalNumber = subjectHeights.get(i).size();
-//
-//            double START_VS_FREQ_DIFF = 0.2;
-//            double FIRST_HEIGHTS_SEEN = 30;  
-//            double heightsSeen = 0.0;
-//            // look at a detected user's total consecutively detected heights
-//            List<Double> currentUserHeights = subjectHeights.get(i);
-//            for(double currentHeight : currentUserHeights) {
-//                heightsSeen += 1;
-//                allHeightSum += currentHeight;
-//
-//                if (heightsSeen <= FIRST_HEIGHTS_SEEN) {
-//                    startHeights.add(currentHeight);
-//                }
-//                if (currentHeight >= 0.5 && currentHeight < 1) {
-//                    twoToThree.add(currentHeight);
-//                } else if (currentHeight >= 0.75 && currentHeight < 1.25) {
-//                    threeToFour.add(currentHeight);
-//                } else if (currentHeight >= 1 && currentHeight < 1.5) {
-//                    fourToFive.add(currentHeight);
-//                } else if (currentHeight >= 1.25 && currentHeight < 1.75) {
-//                    fiveToSix.add(currentHeight);
-//                } else if (currentHeight >= 1.5 && currentHeight < MAX_PERSON_HEIGHT) {
-//                    sixToSeven.add(currentHeight);
-//                }
-//            }
-//
-//            List<List<Double>> bins = Arrays.asList(twoToThree, threeToFour, fourToFive, fiveToSix,
-//                    sixToSeven);
-//            // find bin of heights with most readings
-//            int maxIndex = 0;
-//            for (int binNumb = 0; binNumb < bins.size(); binNumb++){
-//                double newNumber = bins.get(binNumb).size();
-//                if (newNumber > bins.get(maxIndex).size()){
-//                    maxIndex = binNumb;
-//                }
-//            }
-//            // take average of heights in biggest bin
-//            int biggestBin = maxIndex;
-//            for (double heightValue : bins.get(biggestBin)) {
-//                freqHeightSum += heightValue;
-//                freqTotalNumber += 1;
-//            }
-//            double freqHeightAvg = freqHeightSum / freqTotalNumber;
-//
-//            // account for heights read when person first appears, since likely to be their true height
-//            for (double height : startHeights) {
-//                startHeightSum += height;
-//                startTotalNumber += 1;
-//            }
-//            double startHeightAvg = startHeightSum / startTotalNumber;
-//
-//            // the naively computed average of all heights observed
-//            double allHeightAvg = allHeightSum / allTotalNumber;
-//
-//            // if the first observed heights are similar to the most observed heights, take the average
-//            double heightAvg = 0.0;
-//            if (Math.abs(freqHeightAvg - startHeightAvg) < START_VS_FREQ_DIFF) {
-//                heightAvg = (freqHeightAvg + startHeightAvg) / 2;
-//            } else {
-//                heightAvg = freqHeightAvg;
-//            }
-//            //          System.out.println("Average of frequently observed heights is: " + freqHeightAvg);
-//            //        System.out.println("Average of first observed heights is: " + startHeightAvg);
-//            //        System.out.println("The naive average: " + allHeightAvg);
-//            //        System.out.println("The revised average: " + heightAvg);
-//
-//            usersHeights.add(heightAvg);
-//        }
-//        // each user has been looked at
-//        for(int j = 0; j < startDateTimes.size(); j++) {
-//            System.out.println("User " + j + "; Entry time: " + startDateTimes.get(j) + "; height: " + usersHeights.get(j));
-//        }
-//        return usersHeights;
-//    }
-//}
 
-//
-//    double startHeightSum = 0.0;
-//    double startTotalNumber = 0.0;
-//    double freqHeightSum = 0.0;
-//    double freqTotalNumber = 0.0;
-//    double allHeightSum = 0.0;
-//    double allTotalNumber = singleUserData.size();
-//
-//    double START_VS_FREQ_DIFF = 0.2;
-//    double FIRST_HEIGHTS_SEEN = 30;  
-//    double heightsSeen = 0.0;
-//
-//
-//
-//    for (UserHeightTimestamp location: processedData) {
-//        double currentHeight = location.getHeight();
-//        heightsSeen += 1;
-//        allHeightSum += currentHeight;
-//
-//        if (heightsSeen <= FIRST_HEIGHTS_SEEN) {
-//            startHeights.add(currentHeight);
-//        }
-//        if (currentHeight >= 0.5 && currentHeight < 1) {
-//            twoToThree.add(currentHeight);
-//        } else if (currentHeight >= 0.75 && currentHeight < 1.25) {
-//            threeToFour.add(currentHeight);
-//        } else if (currentHeight >= 1 && currentHeight < 1.75) {
-//            fourToFive.add(currentHeight);
-//        } else if (currentHeight >= 1.5 && currentHeight < 2) {
-//            fiveToSix.add(currentHeight);
-//        } else if (currentHeight >= 1.75 && currentHeight < 2.5) {
-//            sixToSeven.add(currentHeight);
-//        }
-//    }
-//
-//    List<List<Double>> bins = Arrays.asList(twoToThree, threeToFour, fourToFive, fiveToSix,
-//            sixToSeven);
-//    // find bin of heights with most readings
-//    int maxIndex = 0;
-//    for (int i = 1; i < bins.size(); i++){
-//        double newNumber = bins.get(i).size();
-//        if (newNumber > bins.get(maxIndex).size()){
-//            maxIndex = i;
-//        }
-//    }
-//    // take average of heights in biggest bin
-//    int biggestBin = maxIndex;
-//    for (double height : bins.get(biggestBin)) {
-//        freqHeightSum += height;
-//        freqTotalNumber += 1;
-//    }
-//    double freqHeightAvg = freqHeightSum / freqTotalNumber;
-//
-//    // account for heights read when person first appears, since likely to be their true height
-//    for (double height : startHeights) {
-//        startHeightSum += height;
-//        startTotalNumber += 1;
-//    }
-//    double startHeightAvg = startHeightSum / startTotalNumber;
-//
-//    // the naively computed average of all heights observed
-//    double allHeightAvg = allHeightSum / allTotalNumber;
+    double startHeightSum = 0.0;
+    double startTotalNumber = 0.0;
+    double freqHeightSum = 0.0;
+    double freqTotalNumber = 0.0;
+    double allHeightSum = 0.0;
+    double allTotalNumber = singleUserData.size();
+
+    double START_VS_FREQ_DIFF = 0.2;
+    double FIRST_HEIGHTS_SEEN = 30;  
+    double heightsSeen = 0.0;
+
+
+
+    for (UserHeightTimestamp location: processedData) {
+        double currentHeight = location.getHeight();
+        heightsSeen += 1;
+        allHeightSum += currentHeight;
+
+        if (heightsSeen <= FIRST_HEIGHTS_SEEN) {
+            startHeights.add(currentHeight);
+        }
+        if (currentHeight >= 0.5 && currentHeight < 1) {
+            twoToThree.add(currentHeight);
+        } else if (currentHeight >= 0.75 && currentHeight < 1.25) {
+            threeToFour.add(currentHeight);
+        } else if (currentHeight >= 1 && currentHeight < 1.75) {
+            fourToFive.add(currentHeight);
+        } else if (currentHeight >= 1.5 && currentHeight < 2) {
+            fiveToSix.add(currentHeight);
+        } else if (currentHeight >= 1.75 && currentHeight < 2.5) {
+            sixToSeven.add(currentHeight);
+        }
+    }
+
+    List<List<Double>> bins = Arrays.asList(twoToThree, threeToFour, fourToFive, fiveToSix,
+            sixToSeven);
+    // find bin of heights with most readings
+    int maxIndex = 0;
+    for (int i = 1; i < bins.size(); i++){
+        double newNumber = bins.get(i).size();
+        if (newNumber > bins.get(maxIndex).size()){
+            maxIndex = i;
+        }
+    }
+    // take average of heights in biggest bin
+    int biggestBin = maxIndex;
+    for (double height : bins.get(biggestBin)) {
+        freqHeightSum += height;
+        freqTotalNumber += 1;
+    }
+    double freqHeightAvg = freqHeightSum / freqTotalNumber;
+
+    // account for heights read when person first appears, since likely to be their true height
+    for (double height : startHeights) {
+        startHeightSum += height;
+        startTotalNumber += 1;
+    }
+    double startHeightAvg = startHeightSum / startTotalNumber;
+
+    // the naively computed average of all heights observed
+    double allHeightAvg = allHeightSum / allTotalNumber;
 //
 //    // if the first observed heights are similar to the most observed heights, take the average
 //    double heightAvg = 0.0;

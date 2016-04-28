@@ -82,6 +82,22 @@ public class Skeleton {
         this.spineShoulder = spineShoulder;
     }
     
+    public Skeleton(Skeleton original) {
+        this.spineBase = original.spineBase;
+        this.spineMid = original.spineMid;
+        this.neck = original.neck;
+        this.head = original.head;
+        this.hipLeft = original.hipLeft;
+        this.kneeLeft = original.kneeLeft;
+        this.ankleLeft = original.ankleLeft;
+        this.footLeft = original.footLeft;
+        this.hipRight = original.hipRight;
+        this.kneeRight = original.kneeRight;
+        this.ankleRight = original.ankleRight;
+        this.footRight = original.footRight;
+        this.spineShoulder = original.spineShoulder;
+    }
+    
     public double getHeight() {
 
         double torsoHeight = head.distance(neck) + neck.distance(spineShoulder) + spineShoulder.distance(spineMid) +
@@ -107,6 +123,10 @@ public class Skeleton {
         return new Point3D(avgX, avgY, avgZ);
     }
 
+    public Point3D getLocation() {
+        return spineMid;
+    }
+    
     public Point3D getSpineBase() {
         return spineBase;
     }
@@ -210,28 +230,13 @@ public class Skeleton {
     @Override
     public boolean equals(Object thatObject) {
         if ( ! (thatObject instanceof Skeleton)) { return false; }
+        
         Skeleton that = (Skeleton)thatObject;
-        
-        return spineBase.equals(that.spineBase);
-        
-//        this.spineBase = spineBase;
-//        this.spineMid = spineMid;
-//        this.neck = neck;
-//        this.head = head;
-//        this.hipLeft = hipLeft;
-//        this.kneeLeft = kneeLeft;
-//        this.ankleLeft = ankleLeft;
-//        this.footLeft = footLeft;
-//        this.hipRight = hipRight;
-//        this.kneeRight = kneeRight;
-//        this.ankleRight = ankleRight;
-//        this.footRight = footRight;
-//        this.spineShoulder = spineShoulder;
-        
+        return spineMid.equals(that.spineMid);
         
     }
     @Override
     public int hashCode() {
-        return spineBase.hashCode();
+        return spineMid.hashCode();
     }
 }

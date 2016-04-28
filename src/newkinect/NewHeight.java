@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
+import java.util.StringTokenizer;
+
 import javafx.geometry.Point3D;
 
 public class NewHeight {
@@ -21,8 +23,6 @@ public class NewHeight {
     // can check for sitting
     // check if not moving
 
-    // read speed every second
-    //
     // Hospital Kinect location
     //KINECT_HEIGHT = 2.75; //in meters
     //KINECT_ANGLE_HORIZONTAL = Math.toRadians(45); 
@@ -30,6 +30,7 @@ public class NewHeight {
 
     // Paloma's Office Kinect Location
     //KINECT_HEIGHT = 1.42; //in meters
+    //KINECT_HEIGHT_LEFT_SIDE = 1
     //KINECT_ANGLE_HORIZONTAL = Math.toRadians(0); 
     //KINECT_ANGLE_VERTICAL = Math.toRadians(83); 
 
@@ -39,18 +40,26 @@ public class NewHeight {
     final static int SECONDS_ABSENT_NEW_PERSON = 7;
     final static double DISTANCE_NEW_PERSON = 1.0; //in meters
     final static double KINECT_HEIGHT = 2.75; //in meters
+    final static double KINECT_HEIGHT_LEFT_SIDE = 1.37;
     final static double KINECT_ANGLE_HORIZONTAL = Math.toRadians(45); 
     final static double KINECT_ANGLE_VERTICAL = Math.toRadians(80); 
     final static double NUMB_OF_TABS_SKELETON = 176;
+    final static int MILLIS_BETWEEN_READS = 10;
     final static String[] ID_DELIMS = {"!", "@", "#", "$", "%", "^"};
 
     public static void main(String[] args) {
         try {
-            String rawSkelDataPath = "src/height_test_data/SkeletonTextData/skeleton OpenPantry_3_Leo.txt";
-            File organizedSkelFile = organizeRawSkelData(rawSkelDataPath);
-            List<UserHeightTimestamp> processedSkelData = processOrganizedSkelData(organizedSkelFile, rawSkelDataPath);
-            double skelHeightFound = getSkeletonHeight(processedSkelData);
-            System.out.println("Computed height from detected joints: " + skelHeightFound);
+            //            String rawSkelDataPath = "src/height_test_data/SkeletonTextData/skeleton OpenPantry_3_Leo.txt";
+            String rawSkelDataPath = "/Users/Leo/Documents/Open Pantry UROP/PalomaLeoTest/skeleton OpenPantry.txt";
+            List<SkeletonGroup> groups = organizeRawSkelData(rawSkelDataPath);
+            List<Person> persons = processSkeletonData(groups);
+            Point3D point1 = new Point3D(1.4375797150385736, 1.099510534685023, 1.7361516925915683);
+            Point3D point2 = new Point3D(1.4373637575565315, 1.099592633159295, 1.7366367749145297);
+            System.out.println(point1.distance(point2));
+            System.out.println(persons);
+            //            List<UserSkeletonTimestamp> processedSkelData = processOrganizedSkelData(groups, rawSkelDataPath);
+            //            double skelHeightFound = getUserHeight(processedSkelData);
+            //            System.out.println("Computed height from detected joints: " + skelHeightFound);
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -161,11 +170,11 @@ public class NewHeight {
      * @param kinectHeight the height of the kinect
      * @return the point next read by the scanner
      */
-    private static Point3D readNextXYZ(Scanner scan) {
+    private static Point3D readNextXYZ(StringTokenizer lineTokens) {
 
-        Point3D realCoords = getRealCoord(Double.parseDouble(scan.next()), 
-                Double.parseDouble(scan.next()), Double.parseDouble(scan.next()), 
-                KINECT_ANGLE_VERTICAL, KINECT_ANGLE_HORIZONTAL, KINECT_HEIGHT);
+        Point3D realCoords = getRealCoord(Double.parseDouble(lineTokens.nextToken()), 
+                Double.parseDouble(lineTokens.nextToken()), Double.parseDouble(lineTokens.nextToken()), 
+                KINECT_ANGLE_VERTICAL, KINECT_ANGLE_HORIZONTAL, KINECT_HEIGHT_LEFT_SIDE);
 
         return realCoords;
     }
@@ -184,6 +193,19 @@ public class NewHeight {
     }
 
     /**
+     * 
+     * @param startDateTime
+     * @param endDateTime
+     * @return
+     */
+    private static boolean withinReads(LocalDateTime startDateTime, LocalDateTime endDateTime) {
+        return (startDateTime.until(endDateTime, ChronoUnit.DAYS) < 1) &&
+                (startDateTime.until(endDateTime, ChronoUnit.HOURS) < 1) &&
+                (startDateTime.until(endDateTime, ChronoUnit.MINUTES) < 1) &&
+                (startDateTime.until(endDateTime, ChronoUnit.MILLIS) < MILLIS_BETWEEN_READS);
+    }
+
+    /**
      * Get head, neck, spine_shoulder, spine-mid, spine-base, hip_left, hip_right, knee_left, knee_right,
      * ankle_left, ankle_right, foot_left, foot_right coordinates at times of detection
      * @param rawDataPath the txt file with skeleton data read by the kinect
@@ -191,124 +213,285 @@ public class NewHeight {
      *         ankle_left, ankle_right, foot_left, and foot_right and the time they were detected
      * @throws IOException
      */
-    public static File organizeRawSkelData(final String rawDataPath) throws IOException {
+    public static List<SkeletonGroup> organizeRawSkelData(final String rawDataPath) throws IOException {
+        int NUMBER_OF_TOKENS_PER_READING = 177;
+        int index = 0;
+        List<SkeletonGroup> groupsPerTimestamp = new ArrayList<>();
         System.out.println("Organizing Skeleton Data...");
+
         // create readers and writers
         String modifier = "organized";
         FileReader reader = new FileReader(rawDataPath); 
         BufferedReader buffReader = new BufferedReader(reader); 
         BufferedWriter buffWriter = getBufferedWriter(rawDataPath, modifier); 
 
-        String line = buffReader.readLine();
         //        String[] prevLines = new String[ID_DELIMS.length]; Arrays.fill(prevLines,"");
-        //        LocalDateTime prevTimeStamp = LocalDateTime.MIN;
-        while(line != null) { 
+        LocalDateTime previousTimeStamp = LocalDateTime.MIN;
 
-            int numberTabs = 0;
-            for (int i = 0; i < line.length(); i++) {
-                char c = line.charAt(i);
-                if( c == '\t') {
-                    numberTabs += 1;
-                }
-            }
-            if (numberTabs == NUMB_OF_TABS_SKELETON) { 
+        String line = buffReader.readLine();
+        int expectedUser = 0;
+        List<UserSkeletonTimestamp> userReadingsInGroup = new ArrayList<>();
+        SkeletonGroup currentObservedGroup = new SkeletonGroup(userReadingsInGroup);
+        while(line != null) { 
+            // count tokens in line
+            StringTokenizer lineTokens = new StringTokenizer(line);
+            // ensure it's a full reading with all joints
+            if (lineTokens.countTokens() == NUMBER_OF_TOKENS_PER_READING) { 
                 LocalDateTime timeStamp = getLocalDateTime(line.substring(line.lastIndexOf("\t")+1));
                 String lineWOTimeID = line.substring(0,line.lastIndexOf("\t")-1).trim(); 
                 int userID = Character.getNumericValue(line.charAt(line.lastIndexOf("\t")-1));
                 //                if(!lineWOTimeID.equals(prevLines[userID])) { //check for noise
                 if(!onlyZeros(lineWOTimeID)) { //check for useless data
-                    //                        if(!MultiUser.withinReads(prevTimeStamp, timeStamp)) {
-                    //                            buffWriter.write(prevTimeStamp + "\n");
-                    //                        }
-                    Scanner scan = new Scanner(line);
+                    //                    if(!withinReads(prevTimeStamp, timeStamp)) {
 
-                    Point3D realHeadCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
+                    // If kinect finishes observing total number of users in room at given time, restart with first observed user at new time stamp
+                    if(userID != expectedUser) {
+                        buffWriter.write(currentObservedGroup + "\t" + previousTimeStamp + "\n");
+                        // Update
+                        groupsPerTimestamp.add(currentObservedGroup);
+                        currentObservedGroup = new SkeletonGroup(userReadingsInGroup);
+                        // refresh
+                        expectedUser = 0;
                     }
+                    //READ LINE AND CREATE SKELETON OBJECT
+                    Point3D realSpineBaseCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realSpineMidCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realNeckCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realHeadCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<60; i++) { lineTokens.nextToken(); }
+                    Point3D realHipLeftCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realKneeLeftCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realAnkleLeftCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realFootLeftCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realHipRightCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realKneeRightCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realAnkleRightCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realFootRightCoords = readNextXYZ(lineTokens);
+                    for (int i =0; i<4; i++) { lineTokens.nextToken(); }
+                    Point3D realSpineShoulderCoords = readNextXYZ(lineTokens);
 
-                    Point3D realNeckCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
+                    Skeleton currentPerson = new Skeleton(realSpineBaseCoords, realSpineMidCoords, realNeckCoords, realHeadCoords, 
+                            realHipLeftCoords, realKneeLeftCoords, realAnkleLeftCoords, realFootLeftCoords, realHipRightCoords, realKneeRightCoords,
+                            realAnkleRightCoords, realFootRightCoords, realSpineShoulderCoords);
 
-                    Point3D realSpineShoulderCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realSpineMidCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realSpineBaseCoords = readNextXYZ(scan);
-                    for (int i =0; i<18; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realHipRightCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realHipLeftCoords = readNextXYZ(scan);
-                    for (int i =0; i<74; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realKneeRightCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realAnkleRightCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realFootRightCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realKneeLeftCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realAnkleLeftCoords = readNextXYZ(scan);
-                    for (int i =0; i<4; i++) {
-                        scan.next();
-                    }
-
-                    Point3D realFootLeftCoords = readNextXYZ(scan);
-
-                    buffWriter.write("User: " + userID + ";" + "\t" + 
-                            realHeadCoords.getX() + "\t" + realHeadCoords.getY() + "\t" + realHeadCoords.getZ() + "\t" +
-                            realNeckCoords.getX() + "\t" + realNeckCoords.getY() + "\t" + realNeckCoords.getZ() + "\t" +
-                            realSpineShoulderCoords.getX() + "\t" + realSpineShoulderCoords.getY() + "\t" + realSpineShoulderCoords.getZ() + "\t" +
-                            realSpineMidCoords.getX() + "\t" + realSpineMidCoords.getY() + "\t" + realSpineMidCoords.getZ() + "\t" +
-                            realSpineBaseCoords.getX() + "\t" + realSpineBaseCoords.getY() + "\t" + realSpineBaseCoords.getZ() + "\t" +
-                            realHipRightCoords.getX() + "\t" + realHipRightCoords.getY() + "\t" + realHipRightCoords.getZ() + "\t" +
-                            realHipLeftCoords.getX() + "\t" + realHipLeftCoords.getY() + "\t" + realHipLeftCoords.getZ() + "\t" +
-                            realKneeRightCoords.getX() + "\t" + realKneeRightCoords.getY() + "\t" + realKneeRightCoords.getZ() + "\t" +
-                            realAnkleRightCoords.getX() + "\t" + realAnkleRightCoords.getY() + "\t" + realAnkleRightCoords.getZ() + "\t" +
-                            realFootRightCoords.getX() + "\t" + realFootRightCoords.getY() + "\t" + realFootRightCoords.getZ() + "\t" +
-                            realKneeLeftCoords.getX() + "\t" + realKneeLeftCoords.getY() + "\t" + realKneeLeftCoords.getZ() + "\t" +
-                            realAnkleLeftCoords.getX() + "\t" + realAnkleLeftCoords.getY() + "\t" + realAnkleLeftCoords.getZ() + "\t" +
-                            realFootLeftCoords.getX() + "\t" + realFootLeftCoords.getY() + "\t" + realFootLeftCoords.getZ() + "\t" +
-                            timeStamp + "\n");
-                    scan.close();
+                    // Assign user Skeleton to user ID and timestamp
+                    UserSkeletonTimestamp currentPersonAndTime = new UserSkeletonTimestamp(ID_DELIMS[userID], currentPerson, timeStamp);
+                    // Add the user Skeleton, ID, time stamp combo to the group of observed users with the same(~) time stamp reading
+                    currentObservedGroup = currentObservedGroup.addUser(currentPersonAndTime);
+                    // Look forward to next user in room at one time stamp
+                    expectedUser += 1;
                 }
+                previousTimeStamp = timeStamp;
             }
             line = buffReader.readLine();
         } 
-
         buffReader.close();
         buffWriter.close();
-        return new File(rawDataPath.substring(0, rawDataPath.lastIndexOf("."))
-                + " " + modifier + ".txt");
+        return groupsPerTimestamp;
+
+        //        return new File(rawDataPath.substring(0, rawDataPath.lastIndexOf("."))
+        //                + " " + modifier + ".txt");
+    }
+
+    /**
+     * Takes a listing of groups of users in room at specific times
+     * @param groupsPerTimeStamp
+     * @return the list of users (identified by integer ids) with their start times and end times as well as their times
+     */
+    public static List<Person> processSkeletonData(List<SkeletonGroup> groupsPerTimeStamp) {
+        List<Person> listOfUsers = new ArrayList<>();
+        Person person0 = new Person();
+        Person person1 = new Person();
+        Person person2 = new Person();
+        Person person3 = new Person();
+        Person person4 = new Person();
+        Person person5 = new Person();
+
+        SkeletonGroup previousGroup = new SkeletonGroup(new ArrayList<>());
+        int previousGroupSize = 0;
+        int currentGroupSize = 0;
+        int assignedID = 0;
+        int groupsSeen = 0;
+
+        for (SkeletonGroup currentGroup : groupsPerTimeStamp) {
+            previousGroupSize = previousGroup.getSize();
+            currentGroupSize = currentGroup.getSize();
+            groupsSeen += 1;
+
+            if (currentGroupSize < previousGroupSize) {
+                //Someone left
+                System.out.println("Less than:" + groupsSeen);
+                List<Integer> usersThatLeft = new ArrayList<>(Arrays.asList(0, 1, 2, 3, 4, 5)); 
+                for (int i = 0; i < currentGroup.getSize(); i++) {
+                    if (i == 0) {
+                        Person oldPerson0 = person0;
+                        Person currentPerson0 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        if (currentPerson0.getStartLocationTimestamp().isSamePerson(oldPerson0.getEndLocationTimestamp())) {
+                            // THEY'RE THE SAME PERSON THANK GOD
+                            System.out.println("woah same person at: " + currentPerson0.getStartLocationTimestamp().getDateTime());
+                            person0.addLocationTimeStamp(currentGroup.getSingleUser(i));
+                            usersThatLeft.remove(0);
+                        } else {
+                            // NOT THE SAME PERSON...
+                            System.out.println("SWITCHAROO0");
+                            for (int previousGroupIndex = i + 1; previousGroupIndex < previousGroupSize; previousGroupIndex += 1) {
+                                // check each remaining person from previous group to see which one is now person0 in current group
+                                if (previousGroupIndex == 1) {
+                                    if (currentPerson0.getStartLocationTimestamp().isSamePerson(person1.getEndLocationTimestamp())) {
+                                        person0 = new Person(person1);
+                                    }
+                                }
+                            }
+
+                        }
+                    }
+                    if (i == 1) {
+                        Person oldPerson1 = person1;
+                        Person currentPerson1 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        if (!(currentPerson1.getStartLocationTimestamp().isSamePerson(oldPerson1.getEndLocationTimestamp()))) {
+                            System.out.println("SWITCHAROO");
+                        }
+                    }
+                    else if (i == 2) {
+                        Person oldPerson2 = person2;
+                        Person currentPerson2 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        if (!(currentPerson2.getStartLocationTimestamp().isSamePerson(oldPerson2.getEndLocationTimestamp()))) {
+                            System.out.println("1");
+                        }
+                    }
+                    else if (i == 3) {
+                        Person oldPerson3 = person3;
+                        Person currentPerson3 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        if (!(currentPerson3.getStartLocationTimestamp().isSamePerson(oldPerson3.getEndLocationTimestamp()))) {
+                            System.out.println("SWITCHAROO3");
+                        }
+                    }
+                    else if (i == 4) {
+                        Person oldPerson4 = person4;
+                        Person currentPerson4 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        if (!(currentPerson4.getStartLocationTimestamp().isSamePerson(oldPerson4.getEndLocationTimestamp()))) {
+                            System.out.println("SWITCHAROO4");
+                        }
+                    }
+                    else if (i == 5) {
+                        Person oldPerson4 = person0;
+                        Person currentPerson4 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        if (!(currentPerson4.getStartLocationTimestamp().isSamePerson(oldPerson4.getEndLocationTimestamp()))) {
+                            System.out.println("SWITCHAROO5");
+                        }
+                    }
+                }
+                for (Integer element : usersThatLeft) {
+                    if (element == 0) {
+                        person0 = new Person();
+                    }
+                    else if (element == 1) {
+                        person1 = new Person();
+                    }
+                    else if (element == 2) {
+                        person2 = new Person();
+                    }
+                    else if (element == 3) {
+                        person3 = new Person();
+                    }
+                    else if (element == 4) {
+                        person4 = new Person();
+                    }
+                    else if (element == 5) {
+                        person5 = new Person();
+                    }
+                }
+
+                previousGroup = currentGroup;
+
+            } else if (currentGroupSize > previousGroupSize) {
+                // Somebody joined
+                // make a new person array
+                int numberNewUsers = currentGroupSize - previousGroupSize;
+                // create new instances for newly detected users
+                for (int i = previousGroupSize; i < currentGroupSize; i++) {
+                    if (i == 0) {
+                        person0 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        assignedID += 1;
+                        listOfUsers.add(person0);
+                    }
+                    if (i == 1) {
+                        person1 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        assignedID += 1;
+                        listOfUsers.add(person1);
+                    }
+                    if (i == 2) {
+                        person2 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        assignedID += 1;
+                        listOfUsers.add(person2);
+                    }
+                    if (i == 3) {
+                        person3 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        assignedID += 1;
+                        listOfUsers.add(person3);
+                    }
+                    if (i == 4) {
+                        person4 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        assignedID += 1;
+                        listOfUsers.add(person4);
+                    }
+                    if (i == 5) {
+                        person5 = new Person(assignedID, currentGroup.getSingleUser(i));
+                        assignedID += 1;
+                        listOfUsers.add(person5);
+                    }
+                }
+                previousGroup = currentGroup;
+
+            } else if (currentGroupSize == previousGroupSize){
+                //check everyone is the same person
+                for (int i = 0; i < currentGroupSize; i++) {
+                    //                    System.out.println("first: " + previousGroup + "; second: " + currentGroup);
+                    if (!(previousGroup.getSingleUser(i).isSamePerson((currentGroup.getSingleUser(i))))) {
+                        //                        double distance = previousGroup.getSingleUser(i).getLocation().distance(currentGroup.getSingleUser(i).getLocation());
+                        //                        double time = previousGroup.getSingleUser(i).getDateTime().until(currentGroup.getSingleUser(i).getDateTime(), ChronoUnit.MILLIS);
+                        //                        double speed = distance / time;
+                        continue;
+                    } else {
+                        if (i == 0) {
+                            person0.addLocationTimeStamp(currentGroup.getSingleUser(i));
+                        }
+                        if (i == 1) {
+                            person1.addLocationTimeStamp(currentGroup.getSingleUser(i));
+                        }
+                        if (i == 2) {
+                            person2.addLocationTimeStamp(currentGroup.getSingleUser(i));
+                        }
+                        if (i == 3) {
+                            person3.addLocationTimeStamp(currentGroup.getSingleUser(i));
+                        }
+                        if (i == 4) {
+                            person4.addLocationTimeStamp(currentGroup.getSingleUser(i));
+                        }
+                        if (i == 5) {
+                            person5.addLocationTimeStamp(currentGroup.getSingleUser(i));
+                        }
+                    }
+                }
+                //                System.out.println("Equal to:" + r);
+            }
+            previousGroup = currentGroup;
+        }
+        System.out.println("did i make it??");
+        for (Person person : listOfUsers) {
+            System.out.println(person);
+        }
+        return listOfUsers;
     }
 
     /**
@@ -319,14 +502,15 @@ public class NewHeight {
      * @return the calculated heights of the user at different times
      * @throws IOException
      */
-    public static List<UserHeightTimestamp> processOrganizedSkelData(final File organizedData, final String rawDataPath) throws IOException {
+    public static List<UserSkeletonTimestamp> processOrganizedSkelData(final File organizedData, final String rawDataPath) throws IOException {
         System.out.println("Processing Skeleton Data...");
         // create reader and writer
         String modifier = "skeleton_locations";
         FileReader reader = new FileReader(organizedData);
         BufferedReader buffReader = new BufferedReader(reader);
         BufferedWriter buffWriter = getBufferedWriter(rawDataPath, modifier);
-        List<UserHeightTimestamp> processedData = new ArrayList<>();
+        List<UserSkeletonTimestamp> processedData = new ArrayList<>();
+        //        List<UserSkeletonTimestamp>[] processedData = new ArrayList[ID_DELIMS.length];
 
         Point3D lastCom = new Point3D(1000.,1000.,1000.);
         LocalDateTime lastDateTime = LocalDateTime.MIN;
@@ -336,28 +520,20 @@ public class NewHeight {
         String line = buffReader.readLine(); 
         while(line != null) {
             LocalDateTime dateTime = LocalDateTime.parse(line.substring(line.lastIndexOf("-")-7));
-
+            StringTokenizer lineTokens = new StringTokenizer(line);
+            int numberUsersDetected = lineTokens.countTokens();
+            System.out.println(numberUsersDetected);
             Scanner scan = new Scanner(line.substring(line.indexOf("\t")+1, line.lastIndexOf("\t")).trim());
 
-            Point3D head = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()) + HEAD_DIFFERENCE,
-                    Double.parseDouble(scan.next()));
-            Point3D neck = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
-                    Double.parseDouble(scan.next()));
-            Point3D spineShoulder = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
-                    Double.parseDouble(scan.next()));
             Point3D spineMid = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
                     Double.parseDouble(scan.next()));
             Point3D spineBase = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
                     Double.parseDouble(scan.next()));
-            Point3D hipRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
+            Point3D head = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()) + HEAD_DIFFERENCE,
+                    Double.parseDouble(scan.next()));
+            Point3D neck = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
                     Double.parseDouble(scan.next()));
             Point3D hipLeft = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
-                    Double.parseDouble(scan.next()));
-            Point3D kneeRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
-                    Double.parseDouble(scan.next()));
-            Point3D ankleRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
-                    Double.parseDouble(scan.next()));
-            Point3D footRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
                     Double.parseDouble(scan.next()));
             Point3D kneeLeft = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
                     Double.parseDouble(scan.next()));
@@ -365,19 +541,31 @@ public class NewHeight {
                     Double.parseDouble(scan.next()));
             Point3D footLeft = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
                     Double.parseDouble(scan.next()));
+            Point3D hipRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
+                    Double.parseDouble(scan.next()));
+            Point3D kneeRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
+                    Double.parseDouble(scan.next()));
+            Point3D ankleRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
+                    Double.parseDouble(scan.next()));
+            Point3D footRight = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
+                    Double.parseDouble(scan.next()));
+
+            Point3D spineShoulder = new Point3D(Double.parseDouble(scan.next()), Double.parseDouble(scan.next()),
+                    Double.parseDouble(scan.next()));
 
             Point3D currentCom = avgPoint(spineMid, spineBase);
+            Skeleton currentSkeleton = new Skeleton(spineBase, spineMid, neck, head, hipLeft, kneeLeft, 
+                    ankleLeft, footLeft, hipRight, kneeRight, ankleRight, footRight, spineShoulder);
 
             if (m>0) {
                 double speed = lastCom.distance(currentCom) / (lastDateTime.until(dateTime, ChronoUnit.MILLIS));
                 // make sure spinebase is higher than knees
                 if (speed < MIN_WALKING_SPEED && 
                         spineBase.getY() > ((kneeRight.getY() + kneeLeft.getY()) /2)) {
-                    
-                    double totalHeight = calculateInstanceSkeletonHeight(spineBase, spineMid, neck, head,
-                            hipLeft, kneeLeft, ankleLeft, footLeft, hipRight, kneeRight, ankleRight, footRight, spineShoulder);
-                    
-                    processedData.add(new UserHeightTimestamp("user", totalHeight, dateTime));
+
+                    double totalHeight = currentSkeleton.getHeight();
+
+                    //                    processedData.add(new UserSkeletonTimestamp("user", totalHeight, dateTime));
 
                     scan.close();
                     buffWriter.write("" + totalHeight + "\n");
@@ -392,48 +580,7 @@ public class NewHeight {
         buffReader.close();
         buffWriter.close();
         return processedData; 
- 
-    }
 
-    /**
-     * Takes 13 skeleton joint locations in their respective order in terms of the Kinect joint type enumeration
-     * 
-     * spineBase:0, spineMid:1, neck:2, head:3, hipLeft:12, kneeLeft:13, ankleLeft:14, footLeft:15
-     * hipRight:16, kneeRight:17, ankleRight:18, footRight:19, spineShoulder:20, 
-     * 
-     * @param spineBase
-     * @param spineMid
-     * @param neck
-     * @param head
-     * @param hipLeft
-     * @param kneeLeft
-     * @param ankleLeft
-     * @param footLeft
-     * @param hipRight
-     * @param kneeRight
-     * @param ankleRight
-     * @param footRight
-     * @param spineShoulder
-     * 
-     * @return returns the calculate height of the skeleton from joint measurements and distance calculations
-     */
-    public static double calculateInstanceSkeletonHeight(Point3D spineBase, Point3D spineMid, Point3D neck,
-            Point3D head, Point3D hipLeft, Point3D kneeLeft, Point3D ankleLeft, Point3D footLeft,
-            Point3D hipRight, Point3D kneeRight, Point3D ankleRight, Point3D footRight, Point3D spineShoulder) {
-
-        double torsoHeight = head.distance(neck) + neck.distance(spineShoulder) + spineShoulder.distance(spineMid) +
-                spineMid.distance(spineBase) + spineBase.distance(avgPoint(hipRight, hipLeft));
-
-        double rightLegHeight = hipRight.distance(kneeRight) + kneeRight.distance(ankleRight) +
-                ankleRight.distance(footRight);
-
-        double leftLegHeight = hipLeft.distance(kneeLeft) + kneeLeft.distance(ankleLeft) + 
-                ankleLeft.distance(footLeft);
-
-        // take average of leg heights
-        double totalHeight = torsoHeight + ((rightLegHeight + leftLegHeight)/2);
-
-        return totalHeight;
     }
 
     /**
@@ -445,7 +592,7 @@ public class NewHeight {
      * @param bin3 Bin containing heights with measurements between 1.25 and 1.75 meters
      * @param bin4 Bin containing heights with measurements between 1.5 and 2 meters
      */
-    public static void placeHeightInBin(double currentHeight, List<Double> bin0, List<Double> bin1, List<Double> bin2,
+    public static void placeHeightInBin(double height, List<Double> bin0, List<Double> bin1, List<Double> bin2,
             List<Double> bin3, List<Double> bin4) {
         double HALF_METER = 0.5;
         double THREE_QUARTER_METER = 0.75;
@@ -455,24 +602,34 @@ public class NewHeight {
         double ONE_AND_THREE_QUARTER_METER = 1.75;
         double TWO_METER = 2;
 
-        if (currentHeight >= HALF_METER && currentHeight < ONE_METER) {
-            bin0.add(currentHeight);
-        } else if (currentHeight >= THREE_QUARTER_METER && currentHeight < ONE_AND_QUARTER_METER) {
-            bin1.add(currentHeight);
-        } else if (currentHeight >= ONE_METER && currentHeight < ONE_AND_HALF_METER) {
-            bin2.add(currentHeight);
-        } else if (currentHeight >= ONE_AND_QUARTER_METER && currentHeight < ONE_AND_THREE_QUARTER_METER) {
-            bin3.add(currentHeight);
-        } else if (currentHeight >= ONE_AND_HALF_METER && currentHeight < TWO_METER) {
-            bin4.add(currentHeight);
+        if (height >= HALF_METER && height < ONE_METER) {
+            bin0.add(height);
+        } else if (height >= THREE_QUARTER_METER && height < ONE_AND_QUARTER_METER) {
+            bin1.add(height);
+        } else if (height >= ONE_METER && height < ONE_AND_HALF_METER) {
+            bin2.add(height);
+        } else if (height >= ONE_AND_QUARTER_METER && height < ONE_AND_THREE_QUARTER_METER) {
+            bin3.add(height);
+        } else if (height >= ONE_AND_HALF_METER && height < TWO_METER) {
+            bin4.add(height);
         }
     }
 
+    /**
+     * Finds the measurement range with the most observed heights and the average of the heights
+     * that fall in that range
+     * @param bin0 Bin containing heights with measurements between 0.5 and 1 meter
+     * @param bin1 Bin containing heights with measurements between 0.75 and 1.25 meters
+     * @param bin2 Bin containing heights with measurements between 1 and 1.5 meters
+     * @param bin3 Bin containing heights with measurements between 1.25 and 1.75 meters
+     * @param bin4 Bin containing heights with measurements between 1.5 and 2 meters
+     * @return the average of the heights that fall in the measurement range with most recorded height observations
+     */
     public static double calculateMostFrequentHeightAverage(List<Double> bin0, List<Double> bin1, List<Double> bin2,
             List<Double> bin3, List<Double> bin4) {
 
         double mostFrequentHeightSum = 0.0;
-
+        // find bin (measurement range) with most height observations
         List<List<Double>> bins = Arrays.asList(bin0, bin1, bin2, bin3, bin4);
         int maxBin = 0;
         for (int i = 1; i < bins.size(); i++){
@@ -481,7 +638,7 @@ public class NewHeight {
                 maxBin = i;
             }
         }
-        // take average of heights in biggest bin
+        // take average of heights in bin with most height observations
         for (double height : bins.get(maxBin)) {
             mostFrequentHeightSum += height;
         }
@@ -494,7 +651,7 @@ public class NewHeight {
      * @param processedData the calculated heights of the user at different times
      * @return the calculated estimated height of the user
      */
-    public static double getSkeletonHeight(final List<UserHeightTimestamp> processedData) {
+    public static double getUserHeight(final List<UserSkeletonTimestamp> processedData) {
         // Accounting for every single height measurement observed
         double totalHeightSum = 0.0;
         double totalObservationCount = processedData.size();
@@ -515,7 +672,7 @@ public class NewHeight {
         final List<Double> bin3 = new ArrayList<>();
         final List<Double> bin4 = new ArrayList<>();
 
-        for (UserHeightTimestamp instance: processedData) {
+        for (UserSkeletonTimestamp instance: processedData) {
             double currentHeight = instance.getHeight();
             heightsObserved += 1;
             totalHeightSum += currentHeight;

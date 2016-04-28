@@ -51,12 +51,26 @@ public class NewHeight {
         try {
             //            String rawSkelDataPath = "src/height_test_data/SkeletonTextData/skeleton OpenPantry_3_Leo.txt";
             String rawSkelDataPath = "/Users/Leo/Documents/Open Pantry UROP/PalomaLeoTest/skeleton OpenPantry.txt";
+//            String rawSkelDataPath = "/Users/Leo/Documents/Open Pantry UROP/hospitalTest/skeletonData.txt";
             List<SkeletonGroup> groups = organizeRawSkelData(rawSkelDataPath);
             List<Person> persons = processSkeletonData(groups);
-            Point3D point1 = new Point3D(1.4375797150385736, 1.099510534685023, 1.7361516925915683);
-            Point3D point2 = new Point3D(1.4373637575565315, 1.099592633159295, 1.7366367749145297);
-            System.out.println(point1.distance(point2));
+
             System.out.println(persons);
+            
+//          Point3D point1 = new Point3D(1.4375797150385736, 1.099510534685023, 1.7361516925915683);
+//          Point3D point2 = new Point3D(1.4373637575565315, 1.099592633159295, 1.7366367749145297);
+//          System.out.println(point1.distance(point2));
+            
+//            Skeleton testSkeleton = new Skeleton(point1, point2, point1, point2, point1, point2, point1, point2, point1, point1, point1, point1, point1);
+//            LocalDateTime testTime = LocalDateTime.of(2016, 04, 19, 17, 36, 56, 738);
+//            List<Person> testPersonList = new ArrayList<>();
+//            Person person0 = new Person(0, new UserSkeletonTimestamp("0", testSkeleton, testTime));
+//            testPersonList.add(person0);
+//            System.out.println("1: " + testPersonList);
+//            testPersonList.add(new Person());
+//            System.out.println("2:" + testPersonList);
+//            System.out.println("3:" + testPersonList);
+            
             //            List<UserSkeletonTimestamp> processedSkelData = processOrganizedSkelData(groups, rawSkelDataPath);
             //            double skelHeightFound = getUserHeight(processedSkelData);
             //            System.out.println("Computed height from detected joints: " + skelHeightFound);
@@ -174,7 +188,7 @@ public class NewHeight {
 
         Point3D realCoords = getRealCoord(Double.parseDouble(lineTokens.nextToken()), 
                 Double.parseDouble(lineTokens.nextToken()), Double.parseDouble(lineTokens.nextToken()), 
-                KINECT_ANGLE_VERTICAL, KINECT_ANGLE_HORIZONTAL, KINECT_HEIGHT_LEFT_SIDE);
+                KINECT_ANGLE_VERTICAL, KINECT_ANGLE_HORIZONTAL, KINECT_HEIGHT);
 
         return realCoords;
     }
@@ -330,7 +344,7 @@ public class NewHeight {
 
             if (currentGroupSize < previousGroupSize) {
                 //Someone left
-                System.out.println("Less than:" + groupsSeen);
+                System.out.println("Someone(s) Leave: (" + previousGroupSize + ") -> (" + currentGroupSize +") at " + currentGroup.getTimeOfGroup());
                 List<Integer> usersThatLeft = new ArrayList<>(Arrays.asList(0, 1, 2, 3, 4, 5)); 
                 for (int i = 0; i < currentGroup.getSize(); i++) {
                     if (i == 0) {
@@ -338,12 +352,12 @@ public class NewHeight {
                         Person currentPerson0 = new Person(assignedID, currentGroup.getSingleUser(i));
                         if (currentPerson0.getStartLocationTimestamp().isSamePerson(oldPerson0.getEndLocationTimestamp())) {
                             // THEY'RE THE SAME PERSON THANK GOD
-                            System.out.println("woah same person at: " + currentPerson0.getStartLocationTimestamp().getDateTime());
+//                            System.out.println("woah same person at: " + currentPerson0.getStartLocationTimestamp().getDateTime());
                             person0.addLocationTimeStamp(currentGroup.getSingleUser(i));
                             usersThatLeft.remove(0);
                         } else {
                             // NOT THE SAME PERSON...
-                            System.out.println("SWITCHAROO0");
+//                            System.out.println("SWITCHAROO0");
                             for (int previousGroupIndex = i + 1; previousGroupIndex < previousGroupSize; previousGroupIndex += 1) {
                                 // check each remaining person from previous group to see which one is now person0 in current group
                                 if (previousGroupIndex == 1) {
@@ -416,6 +430,7 @@ public class NewHeight {
 
             } else if (currentGroupSize > previousGroupSize) {
                 // Somebody joined
+                System.out.println("Someone(s) Joins: (" + previousGroupSize + ") -> (" + currentGroupSize +") at " + currentGroup.getTimeOfGroup());
                 // make a new person array
                 int numberNewUsers = currentGroupSize - previousGroupSize;
                 // create new instances for newly detected users
@@ -487,10 +502,9 @@ public class NewHeight {
             }
             previousGroup = currentGroup;
         }
-        System.out.println("did i make it??");
-        for (Person person : listOfUsers) {
-            System.out.println(person);
-        }
+//        for (Person person : listOfUsers) {
+//            System.out.println(person);
+//        }
         return listOfUsers;
     }
 

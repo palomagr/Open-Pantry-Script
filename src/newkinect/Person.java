@@ -1,5 +1,6 @@
 package newkinect;
 
+import java.text.DecimalFormat;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +13,7 @@ public class Person implements Comparable<Person> {
     private int id;
     private List<UserSkeletonTimestamp> locationTimeStamps = new ArrayList<>();
     private final double MAX_PERSON_HEIGHT = 2.0;
+    private final DecimalFormat df = new DecimalFormat("#.##");
     
     public Person(int id, UserSkeletonTimestamp start) {
         this.id = id;
@@ -87,7 +89,7 @@ public class Person implements Comparable<Person> {
     @Override
     public String toString() { 
         StringBuilder returnString = new StringBuilder();
-        returnString.append("Person " + this.id + ": height of "+ this.getHeight() + "(" + this.getStartDateTime() + " to " + this.getEndDateTime());
+        returnString.append("User " + this.id + "; height: "+ df.format(this.getHeight()) + " from (" + this.getStartDateTime() + " to " + this.getEndDateTime() + ")\n");
         return returnString.toString();
     }
 }
